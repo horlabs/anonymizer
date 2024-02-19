@@ -1,0 +1,53 @@
+*.pyc
+*.so
+## Intellij
+**/.idea/
+#**/.idea/workspace.xml
+#**/.idea/tasks.xml
+#*.iml
+#*.iws
+#*.class
+src/CodeStyloJava/SCAA/out/production/SCAA/*
+src/CodeStyloJava/out/*
+src/CodeStyloJava/Naive\ Baseline/src/Driver.class
+src/CodeStyloJava/Naive\ Baseline/src/META-INF/
+src/PyProject/anonymize/obfus_config.yaml
+src/PyProject/config.ini
+
+## vscode
+**/.vscode/
+
+## MacOS
+.DS_STORE
+
+## joern
+data/dataset.tar.gz
+
+## temporary directory for custom testing
+data/temp
+data/test
+## temporary file for arff testing
+data/outputtest.arff
+
+
+## evasion attack directory
+#data/evasionattack/*
+
+#data/ClassificationModels/modelsuffix_*
+#data/ClassificationModels/*/*.pck
+#data/ClassificationModels/model*.pck
+#data/ClassificationModels/*/*model*.pck
+#data/ClassificationModels/modelsuffix*/*model*.pck
+data/ClassificationModels/usenix-camera-ready/*/*model*.pck
+data/SubstituteClassificationModels/*/*/*model*.pck
+data/SubstituteClassificationModels_Equal/*/*/*model*.pck
+data/SubstituteClassificationModels_Unequal/*/*/*model*.pck
+
+data/dataset_2017/libtoolingfeatures_2017_8
+data/dataset_2017/libtoolingfeatures_2017_8_*
+data/dataset_2017_transformed
+
+data/dataset_*/**/*.a
+data/dataset_*/**/*.out
+
+attribution*.csv
