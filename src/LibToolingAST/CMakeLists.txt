@@ -86,6 +86,8 @@ add_subdirectory(feature_extraction)
 # All the tools we need to extract the authorship identification features, fork of feature_extraction.
 # All feature classes are now extracted by a single call.
 add_subdirectory(feature_extraction_single)
+# Same as before, but now with annotation to tell code location(s) of each feature
+add_subdirectory(feature_extraction_single_annotated)
 # All the tools we need to modify the authorship features
 add_subdirectory(transformers)
 # Tests to check validity of feature_extraction tools
