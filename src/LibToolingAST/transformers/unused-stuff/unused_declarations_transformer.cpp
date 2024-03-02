@@ -116,6 +116,9 @@ public:
         std::vector<const VarDecl *> usable_decls;
         // Go over all declarations and check if never used via Decl-Reference Mapping
         for (auto dx : var_declarations) {
+            // ToDo: handle ParmVarDecl correctly in calls if unused and removed
+            if (isa<ParmVarDecl>(dx))
+                continue;
 
             // Check for input strategy
             if (strategy == remove_local_decl && !dx->isLocalVarDeclOrParm())
@@ -204,6 +207,9 @@ private:
     SourceManager &sm;
 
     std::vector<const VarDecl*> var_declarations;
+
+    // ToDo: Handle the case if the decl is a function argument (and the last, so
+    // one off will remove the closing ")" )
 
     /**
      * Handle default cases, such as

@@ -59,6 +59,15 @@ public:
                                                                     const FunctionDecl* dfunc);
 
     /**
+     * For a given function declaration, find all expressions (statements) that reference this function.
+     * @param cfggraph
+     * @param dfunc
+     * @return
+     */
+    static std::vector<const DeclRefExpr*> queryAllDeclRefExprsToFunction(ControlFlowGraphWithDataFlow *cfggraph, 
+                                                                          const FunctionDecl *dfunc);
+
+    /**
      * Get the body = compound stmt of the main entry point, the main function.
      * So far, we assume that no args are passed to main..
      * @param cfggraph

@@ -7,3 +7,5 @@ class EvasionAlgorithm(Enum):
 
     SimAnnealing = 0
     MCTS_Classic = 2
+    HillClimbing_anonym = 3
+    MCTS_anonym = 4

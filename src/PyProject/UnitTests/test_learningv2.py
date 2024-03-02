@@ -13,6 +13,7 @@ from featureextractionV2.StyloFeatures import StyloFeatures
 from classification import StratifiedKFoldProblemId
 import os
 import typing
+from pathlib import Path
 import ConfigurationGlobalLearning as Config
 from ConfigurationLearning.ConfigurationLearning import ConfigurationLearning
 from ConfigurationLearning.ConfigurationLearningRNN import ConfigurationLearningRNN
@@ -44,7 +45,7 @@ class TestFeatureExtraction(unittest.TestCase):
             repo_path=Config.repo_path,
             dataset_features_dir=os.path.join(Config.repo_path, "data/dataset_2017/libtoolingfeatures_for_public_testing"),
             suffix_data="_2017_8_formatted_macrosremoved",
-            learnmodelspath=None,
+            learnmodelspath=Config.learnmodelspath,
             use_lexems=False,
             use_lexical_features=False,
             stop_words=Config.stop_words_codestylo,
@@ -65,6 +66,7 @@ class TestFeatureExtraction(unittest.TestCase):
 
         c1, c2, c3, c4, c5 = TestFeatureExtraction.learn_process(features_merged=features_merged,
                            learn_config=configuration_learning,
+                           feature_method="Usenix",
                            learn_method="RF")
 
         self.assertAlmostEqual(c1, 0.877450980392, delta=10e-5)
@@ -80,10 +82,13 @@ class TestFeatureExtraction(unittest.TestCase):
     @staticmethod
     def learn_process(features_merged: StyloFeatures,
                       learn_method: str,
+                      feature_method: str,
                       learn_config: typing.Union[ConfigurationLearning, ConfigurationLearningRNN]):
         skf2 = StratifiedKFoldProblemId.StratifiedKFoldProblemId(iids=features_merged.getiids(), n_splits=8, shuffle=True,
                                                                  random_state=411,
                                                                  nocodesperprogrammer=learn_config.probsperprogrammer)
+        modelsavedir = Path(learn_config.learnmodelspath).parent / "modelsuffix_unit_test" / f"{feature_method}_{learn_method}"
+        modelsavedir.mkdir(parents=True, exist_ok=True)
 
         for train_index, test_index in skf2.split(None, None):
             curproblemid = "_".join(features_merged.getiids()[test_index[0]].split("_")[0:2])
@@ -96,7 +101,7 @@ class TestFeatureExtraction(unittest.TestCase):
                     test_index=test_index,
                     problem_id_test=curproblemid,
                     configuration_learning=learn_config,
-                    modelsavedir=None,
+                    modelsavedir=str(modelsavedir),
                     threshold_sel=1.5,
                     learn_method=learn_method,
                     skf2=skf2

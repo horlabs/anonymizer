@@ -72,6 +72,16 @@ class LearnSetupRNNRF(LearnSetup):
 
         return scoreprednew
 
+    # @Overwrite
+    def predict_probas(self, feature_vec: np.ndarray):
+
+        featvec_deep, featvec = self.__preprocess(feature_vec=feature_vec)
+        if self.use_rlf:
+            scoreprednew = self.rlf.predict_proba(featvec_deep)[0]
+        else:
+            scoreprednew = self.clf.predict_proba(featvec)[0]
+
+        return scoreprednew
 
     # @Overwrite
     def predict(self, feature_vec: np.ndarray):

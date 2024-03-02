@@ -41,7 +41,7 @@ std::string __getSourceTextInternal(ASTContext &Context, SourceLocation Start, S
 
     unsigned int offs = 0;
     if(checkforsemicolon)
-        offs = Lexer::MeasureTokenLength(_End, SM, Context.getLangOpts());
+        offs = 1;
 
     // Some debugging info before sending the exception
     if(SM.getCharacterData(End.getLocWithOffset(offs)) - SM.getCharacterData(Start) < 0)
@@ -159,13 +159,40 @@ std::vector<std::string> getMatches(std::string input, const std::string &regex)
 }
 
 
-std::string getUniqueFunctionNameAsString(const FunctionDecl* f) {
+std::string getUniqueFunctionNameAsString(const FunctionDecl* f, bool withoutTempl) {
+    bool isCLang = isCFile(f->getASTContext());
     std::stringstream sstream;
+    if (!isCLang && f->getTemplateSpecializationArgs() && !withoutTempl) {
+        for (auto targ : f->getTemplateSpecializationArgs()->asArray()) {
+            if (targ.getKind() == TemplateArgument::Pack) {
+                for (auto parg : targ.getPackAsArray()) {
+                    sstream << parg.getAsType().getAsString() << "_";
+                }
+            } else if (targ.getKind() == TemplateArgument::Type) {
+                sstream << targ.getAsType().getAsString() << "_";
+            } else {
+                assert(false && "Not implemented");
+            }
+        }
+    }
     sstream << "" << f->getQualifiedNameAsString();
-    for(auto farg : f->parameters()){
-        sstream << "_" << ReplaceString(farg->getType().getAsString(), " ", "") << "_" << farg->getQualifiedNameAsString();
+    if (!isCLang) {
+        for(auto farg : f->parameters()){
+            sstream << "_" << ReplaceString(farg->getType().getAsString(), " ", "");
+        }
     }
     return sstream.str();
+}
+
+bool isCFile(const ASTContext &Context) {
+    auto &sm = Context.getSourceManager();
+    auto *Entry = sm.getFileEntryForID(sm.getMainFileID());
+    auto filename = Entry->getName();
+    auto pos = filename.find_last_of('.');
+    if (pos != std::string::npos && filename.substr(pos) == ".c") {
+        return true;
+    }
+    return false;
 }
 
 std::pair<unsigned, unsigned> getRowColumn(SourceLocation sl, SourceManager &sm, bool verbose) {
@@ -185,6 +212,9 @@ bool getParentOfWholeCommandLine(ast_type_traits::DynTypedNode dtn,
                                  SourceManager &sm){
     FullSourceLoc fullLoc(dtn.getSourceRange().getBegin(), sm);
     if(fullLoc.getSpellingLineNumber() < targetrow)
+        return true;
+
+    if(dtn.get<IfStmt>())
         return true;
 
     for(auto par : Context.getParents(dtn)){

@@ -47,18 +47,18 @@ def perform_standard_classification_for_split(features_merged: StyloFeatures,
     testfiles: StyloFeatures = features_merged[test_index]
 
     # II. Learning
-    problemid_test_learn = "_".join(testfiles.getiids()[0].split("_")[0:2])
+    problemid_test_learn = "_".join(testfiles.getiids()[0].split("_")[0:2]) # problem_id_test if "_" not in testfiles.getiids()[0] else "_".join(testfiles.getiids()[0].split("_")[0:2])
     assert problem_id_test == problemid_test_learn
 
     learning: Learning = Learning()
     currentaccuracy, curtestlearnsetup = learning.do_learn(train_obj=trainfiles,
-                                                                 test_obj=testfiles,
-                                                                 config_learning=configuration_learning,
-                                                                 modelsavedir=modelsavedir,
-                                                                 problemid_test=problemid_test_learn,
-                                                                 threshold=threshold_sel,
-                                                                 learn_method=learn_method,
-                                                                 trainproblemlength=len(skf2.get_n_problems()[0]))
+                                                           test_obj=testfiles,
+                                                           config_learning=configuration_learning,
+                                                           modelsavedir=modelsavedir,
+                                                           problemid_test=problemid_test_learn,
+                                                           threshold=threshold_sel,
+                                                           learn_method=learn_method,
+                                                           trainproblemlength=len(skf2.get_n_problems()[0]) if "_" in problem_id_test else len(trainfiles.getiids()))
 
     # III. save accuracy dict, overwrite it in each iteration.
     accuracies[problemid_test_learn] = currentaccuracy

@@ -136,3 +136,51 @@ class StyloFeatures(ABC):
         :param trainobject: a previous training object that saved the wanted column indices
         """
         pass
+
+    @abstractmethod
+    def create_stylo_object_from_train_object(self,
+                                              src: str,
+                                              inputdir: typing.Optional[str],
+                                              outputdir: str,
+                                              verbose: bool) -> 'StyloFeatures':
+        """
+        Create a feature object on new data by using this feature object's vectorizer, feature extraction, ... .
+        Useful if you already have a training object, and you want to extract the features for a new file
+        or a new dataset.
+
+        Typically, we have two scenarios.
+        A. You have a new dataset, and you already extracted all features.
+        Take, for instance, the situation where this trainobject was created from dataset_2017/dataset_2017, and
+        you want to extract the features from dataset_2017/dataset_2017_formatted.
+        Then, we have a directory where all source files are located (such as dataset_2017/dataset_2017_formatted)
+        and where the respective feature files are located (such as dataset_2017/libtoolingfeatures_2017_formatted).
+        Then call this method with
+            create_stylo_object_from_train_object(src="/.../dataset_2017/dataset_2017_formatted",
+                                                  inputdir="/.../dataset_2017/libtoolingfeatures_2017_formatted",
+                                                  outputdir="/dev/shm") # outputdir will not be used here, could be None
+
+        (Note: We need 'src' here, because the unigram extraction from python uses the cpp files directly. If you used
+        lexems instead, src wouldn't be so important.)
+
+        B. You have a single file, and you have not extracted its features, yet.
+        Then call this method with
+            create_stylo_object_from_train_object(src="/.../AUTHOR-NAME/problem_challenge_author.cpp",
+                                                  inputdir=None,
+                                                  outputdir="/dev/shm") # outputdir WILL BE used here
+        Remember: the directory that contains the source file should always have the author name (here AUTHOR-NAME).
+        The remaining file system hierachy doesn't matter here (TODO check).
+
+        If you want to extract the features for more than a file (like in case A), you have to extract the feature
+        files before (all the .dat files). My python implementation only does this for a single file, as the whole
+        dataset would not be very efficient. Look at the data/extractfeatures_single.sh file.
+
+        C. You have a single file, and you have extracted its features.
+        TODO -- I haven't tested that, yet.
+
+        :param src: directory to source or source file
+        :param inputdir: input directory where already extracted files are located
+        :param outputdir: output directory where feature files will be saved.
+        :param verbose: overwrite verbose attribute for this call
+        :return: a new StyloFeatures object.
+        """
+        pass

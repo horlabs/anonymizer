@@ -31,6 +31,14 @@ class LearnSetupSVM(LearnSetup):
         scoreprednew = self.clf.decision_function(featvec)[0][target_class]
         return scoreprednew
 
+    # @Overwrite
+    def predict_probas(self, feature_vec: np.ndarray):
+        assert feature_vec.shape[0] == 1
+        assert feature_vec.shape[1] == self.data_final_train.getfeaturematrix().shape[1]
+
+        featvec = self.stdscaler.transform(feature_vec[0, :].todense())
+        scoreprednew = self.clf.decision_function(featvec)[0]
+        return scoreprednew
 
     # @Overwrite
     def predict(self, feature_vec: np.ndarray):

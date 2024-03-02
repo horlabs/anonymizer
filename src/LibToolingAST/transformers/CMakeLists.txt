@@ -49,6 +49,22 @@ TARGET_LINK_LIBRARIES(
         "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
 
 
+add_executable(fctremoval_transformer
+        fctremoval_transformer.cpp
+        ControlDataFlow/ControlFlowGraphCore.cpp
+        ControlDataFlow/CDFGraphQueryHandler.cpp
+        ControlDataFlow/DFSVisitor.cpp
+        ControlDataFlow/ControlFlowGraphWithDataFlow.cpp
+        utils_transform.cpp
+        lib/SourceTextHelper.cpp
+        ../Utilities/Utils.cpp
+        RenamingGuide.cpp
+        FunctionRemovalTransformer.cpp)
+TARGET_LINK_LIBRARIES(
+        fctremoval_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
 
 add_executable(if_transformer
         if_transformer.cpp
@@ -101,13 +117,78 @@ TARGET_LINK_LIBRARIES(
         -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
         "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
 
+add_executable(paren_transformer
+        paren_transformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        paren_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(compoundassign_transformer
+        CompoundAssignmentTransformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        compoundassign_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(comma_transformer
+        CommaOperatorTransformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        comma_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(main_transformer
+        MainTransformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        main_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(braces_transformer
+        AddBracesTransformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        braces_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(multidecl_transformer
+        SplitMultiDeclTransformer.cpp
+        lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        multidecl_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(codeclone_transformer
+        codecloneremoval_transformer.cpp
+        lib/SourceTextHelper.cpp
+        RenamingGuide.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        codeclone_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
 
 add_subdirectory(lib)
 add_subdirectory(return-transform)
 add_subdirectory(include-add)
 add_subdirectory(include-sort)
+add_subdirectory(for-transform)
 add_subdirectory(naming-transformers)
 add_subdirectory(typedef-transform)
 add_subdirectory(IOTransformers)
 add_subdirectory(unused-stuff)
+add_subdirectory(if-transformers)
 add_subdirectory(preparing)

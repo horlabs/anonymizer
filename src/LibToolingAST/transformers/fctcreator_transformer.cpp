@@ -138,15 +138,15 @@ public:
         switch(strategy) {
             case add_function_compound:
                 sortCompoundStmts(usablesinglecompoundstmts, chooseLocationStrategy, seed);
-                for(auto s : usablesinglecompoundstmts){
-                    if(insertnewfunction(s))
+                for (auto s : usablesinglecompoundstmts) {
+                    if (insertnewfunction(s, seed))
                         return;
                 }
                 break;
             case add_function_compoundcompound:
                 sortCompoundStmts(compoundcompoundstmts, chooseLocationStrategy, seed);
-                for(auto s : compoundcompoundstmts){
-                    if(insertnewfunction(s))
+                for (auto s : compoundcompoundstmts) {
+                    if (insertnewfunction(s, seed))
                         return;
                 }
         }
@@ -327,13 +327,13 @@ private:
      * @param s the lower Compound Stmt that will be replaced by an own function.
      * @return true if replacement was successful.
      */
-    bool insertnewfunction(CompoundStmt *s) {
+    bool insertnewfunction(CompoundStmt *s, int seed) {
 
 #ifdef MYDEBUG
         llvm::errs() << "S:" << getSourceText(Context, s) << "\n";
 #endif
 
-        std::string newfctname = RenamingGuide::getRandomStringWith(10);
+        std::string newfctname = RenamingGuide::getRandomStringWith(10, seed);
         ast_type_traits::DynTypedNode dtn = ast_type_traits::DynTypedNode::create(*s);
 
         // I. Find all variables that are defined outside; we need to add them as function parameters
@@ -390,7 +390,7 @@ private:
 
         // III. Now create the parameter specification for new function
         pairstr returntype = determinereturntype(s);
-        std::string calleeretvarname = RenamingGuide::getRandomStringWith(5);
+        std::string calleeretvarname = RenamingGuide::getRandomStringWith(5, seed+1);
 
         std::stringstream scallee;
         std::stringstream scaller;

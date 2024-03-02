@@ -46,7 +46,9 @@ class ConfigurationLearning:
         self.arffile = os.path.join(dataset_features_dir, "libtoolingfeatures" + suffix_data,
                                     "lexical_features.arff")
         self.joerndats = os.path.join(dataset_features_dir, "libtoolingfeatures" + suffix_data)
-        self.learnmodelspath = learnmodelspath
+
+        self.learnmodelspath_base = learnmodelspath
+        self.learnmodelspath = os.path.join(learnmodelspath, "modelsuffix" + suffix_data) if learnmodelspath is not None else None
 
         self.use_lexems = use_lexems
         self.use_lexical_features = use_lexical_features
@@ -79,3 +81,6 @@ class ConfigurationLearning:
         self.arffile = os.path.join(self.dataset_features_dir, "libtoolingfeatures" + novel_suffix,
                                     "lexical_features.arff")
         self.joerndats = os.path.join(self.dataset_features_dir, "libtoolingfeatures" + novel_suffix)
+
+        if self.learnmodelspath is not None:
+            self.learnmodelspath = os.path.join(self.learnmodelspath_base, "modelsuffix" + novel_suffix)

@@ -1,3 +1,4 @@
+import json
 import typing
 
 from featureextractionV2.ClangTypes.StyloClangFeaturesAbstract import StyloClangFeaturesAbstract
@@ -7,8 +8,9 @@ from sklearn.feature_extraction import DictVectorizer
 import numpy as np
 from scipy import sparse
 import utils_authorship
-import json
 
+import featureextractionV2.utils_extraction_testtime
+from featureextractionV2.StyloFeatures import StyloFeatures
 
 
 class StyloASTNodeFeature(StyloClangFeaturesAbstract):
@@ -81,7 +83,7 @@ class StyloASTNodeFeature(StyloClangFeaturesAbstract):
                 decoded = json.loads(''.join(ast_node_lines[cl].split(" ")[2:]))
 
                 assert len(decoded) > 1
-                authors.append(ast_node_lines[cl].split(" ")[0])
+                authors.append(ast_node_lines[cl].split(" ")[0].replace("_advex", ""))
                 iids.append(ast_node_lines[cl].split(" ")[1])
 
                 features.append({})
@@ -95,7 +97,7 @@ class StyloASTNodeFeature(StyloClangFeaturesAbstract):
 
             except Exception as e:
                 import sys
-                print("Error in file, in row:", cl, file=sys.stderr)
+                print("[ASTNodeFeatures] Error in file {}, in row: {}".format(inputdata, cl), file=sys.stderr)
                 print("{0}".format(e), file=sys.stderr)
                 raise e
 
@@ -125,4 +127,27 @@ class StyloASTNodeFeature(StyloClangFeaturesAbstract):
 
         return feature_matrix, feature_names, authors, iids
 
+    def create_stylo_object_from_train_object(self,
+                                              src: str,
+                                              inputdir: typing.Optional[str],
+                                              outputdir: str,
+                                              verbose: bool = None) -> 'StyloFeatures':
 
+        if verbose is None:
+            verbose = self.verbose
+
+        dict_clang = featureextractionV2.utils_extraction_testtime.extractfeatures_clang(
+            src=src, input_dir=inputdir, output_dir=outputdir, featureclassidentifier=self.featureclassidentifier
+        )
+
+        clangmatrix_att = StyloASTNodeFeature(inputdata=dict_clang[self.featureclassidentifier + ".dat"],
+                                              bigrams=self.bigrams, verbose=verbose,
+                                              trainobject=self, tf=self.tf, idf=self.idf,
+                                              featureclassidentifier=self.featureclassidentifier)
+
+        if self.codestyloreference is not None:
+            x = self.codestyloreference.create_stylo_object_from_train_object(src=src, inputdir=inputdir,
+                                                                              outputdir=outputdir, verbose=verbose)
+            clangmatrix_att.setnextstylo(x)
+
+        return clangmatrix_att

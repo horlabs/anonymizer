@@ -39,7 +39,7 @@ class StratifiedKFoldProblemId(BaseCrossValidator):
         :return: np array of train and test indices.
         """
         # extract the problem id from the iids
-        problem_ids = [x.split("_")[1] for x in self.iids]
+        problem_ids = ["_".join(x.split("_")[:2]) for x in self.iids]
         assert len(set(problem_ids)) == self.probsperprogrammer
 
         problem_id_no = np.unique(np.array(problem_ids))
@@ -51,10 +51,10 @@ class StratifiedKFoldProblemId(BaseCrossValidator):
             self.test_index_probs = problem_id_no[test_index]
 
             sel_train_rows = np.array(
-                [(True if x.split("_")[1] in problem_id_no[train_index] else False) for x in self.iids],
+                [(True if "_".join(x.split("_")[:2]) in problem_id_no[train_index] else False) for x in self.iids],
                 dtype=np.bool)
             sel_test_rows = np.array(
-                [(True if x.split("_")[1] in problem_id_no[test_index] else False) for x in self.iids],
+                [(True if "_".join(x.split("_")[:2]) in problem_id_no[test_index] else False) for x in self.iids],
                 dtype=np.bool)
             train_rows = np.arange(len(self.iids))[sel_train_rows]
             test_rows = np.arange(len(self.iids))[sel_test_rows]

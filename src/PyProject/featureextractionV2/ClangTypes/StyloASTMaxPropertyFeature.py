@@ -7,6 +7,9 @@ import numpy as np
 from scipy import sparse
 import utils_authorship
 
+import featureextractionV2.utils_extraction_testtime
+from featureextractionV2.StyloFeatures import StyloFeatures
+
 
 class StyloASTMaxPropertyFeature(StyloClangFeaturesAbstract):
 
@@ -56,11 +59,11 @@ class StyloASTMaxPropertyFeature(StyloClangFeaturesAbstract):
         for cl in range(len(ast_node_lines)):
             try:
                 features.append(ast_node_lines[cl].split(" ")[2])
-                authors.append(ast_node_lines[cl].split(" ")[0])
+                authors.append(ast_node_lines[cl].split(" ")[0].replace("_advex", ""))
                 iids.append(ast_node_lines[cl].split(" ")[1])
             except Exception as e:
                 import sys
-                print("Error in file in row:", cl, file=sys.stderr)
+                print("Error in file {} in row: {}".format(inputdata, cl), file=sys.stderr)
                 print("{0}".format(e), file=sys.stderr)
                 raise e
 
@@ -79,3 +82,25 @@ class StyloASTMaxPropertyFeature(StyloClangFeaturesAbstract):
         #                                                                  featurenames=[featurename])
 
         return feature_matrix, [featurename], authors, iids
+
+    def create_stylo_object_from_train_object(self,
+                                              src: str,
+                                              inputdir: typing.Optional[str],
+                                              outputdir: str,
+                                              verbose: bool = None) -> 'StyloFeatures':
+
+        dict_clang = featureextractionV2.utils_extraction_testtime.extractfeatures_clang(
+            src=src, input_dir=inputdir, output_dir=outputdir, featureclassidentifier=self.featureclassidentifier
+        )
+
+        clangmatrix_att = StyloASTMaxPropertyFeature(inputdata=dict_clang[self.featureclassidentifier + ".dat"],
+                                                     verbose=self.verbose,
+                                                     trainobject=self, tf=self.tf, idf=self.idf,
+                                                     featureclassidentifier=self.featureclassidentifier)
+
+        if self.codestyloreference is not None:
+            x = self.codestyloreference.create_stylo_object_from_train_object(src=src, inputdir=inputdir,
+                                                                              outputdir=outputdir)
+            clangmatrix_att.setnextstylo(x)
+
+        return clangmatrix_att

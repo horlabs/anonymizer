@@ -122,8 +122,11 @@ public:
             randomlySortVector<TypeLoc>(typelocsfortypedef, seed);
             chosentypeloc = *(typelocsfortypedef.begin());
 //            typetoinsert = getSourceText(Context, chosentypeloc);
-            typetoinsert = chosentypeloc.getType().getUnqualifiedType().getAsString();
-
+            if (chosentypeloc.getType()->isPointerType()) {
+                typetoinsert = chosentypeloc.getType()->getPointeeType().getAsString();
+            } else {
+                typetoinsert = chosentypeloc.getType().getUnqualifiedType().getAsString();
+            }
         } else if(cselection == selectlongestchar) {
             // add the type with the longest char range
             for (TypeLoc tl : this->typelocsfortypedef) {

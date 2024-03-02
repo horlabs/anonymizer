@@ -166,6 +166,36 @@ std::vector<const CallExpr*> ControlDataFlowGraphQueryHandler::queryAllCallExprs
     return matchednodes;
 }
 
+std::vector<const DeclRefExpr *> ControlDataFlowGraphQueryHandler::queryAllDeclRefExprsToFunction(
+    ControlFlowGraphWithDataFlow *cfggraph, const FunctionDecl *dfunc) {
+    // to find all the CallExpr, we make use of the interprocedural edges that go
+    // into the first function vertex.
+
+    std::vector<const DeclRefExpr *> matchednodes;
+
+    if (!cfggraph)
+        throw CFGException();
+
+    // I. Get the vertex
+    Graph::vertex_descriptor fctvertex;
+    if (!cfggraph->findStartingVertexForFunction(getUniqueFunctionNameAsString(dfunc), fctvertex)) {
+        llvm::errs() << "Callee is unknown; in CFGQueryHandler" << "\n";
+        throw CFGException();
+    }
+
+    // II. Now get all CallExpr's over interprocedural edges
+    Graph::in_edge_iterator ei2, ei2_end;
+    for (boost::tie(ei2, ei2_end) = in_edges(fctvertex, cfggraph->graph);
+        ei2 != ei2_end; ++ei2) {
+        if (cfggraph->graph[*ei2].interprocedural) {
+            Graph::vertex_descriptor src = boost::source(*ei2, cfggraph->graph);
+            if (cfggraph->graph[src].stmt && isa<DeclRefExpr>(cfggraph->graph[src].stmt))
+                matchednodes.push_back(cast<DeclRefExpr>(cfggraph->graph[src].stmt));
+        }
+    }
+
+    return matchednodes;
+}
 
 const CompoundStmt* ControlDataFlowGraphQueryHandler::queryBodyOfMainFunction(
         ControlFlowGraphWithDataFlow* cfggraph) {

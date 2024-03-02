@@ -3,9 +3,10 @@ import os
 import subprocess
 import hashlib
 import typing
-from distutils.util import strtobool
+import re
 import csv
 
+import Configuration
 
 
 def check_if_author_needs_reduced_testfile(authiid: str, author: str, call_instructions_csv_path: str) -> bool:
@@ -84,7 +85,9 @@ def copytestfile(testfilesdir: str, authiid: str, targettestfile: str, reduced: 
 
 
 def get_compileclang_call(source_file: str, compilerflags: typing.List[str]):
-    return ["clang++", *compilerflags, source_file, "-o", os.path.splitext(source_file)[0]], os.path.splitext(source_file)[0]
+    return ["clang++" if source_file.endswith(".cpp") else "clang", *compilerflags, source_file, "-o",
+            os.path.splitext(source_file)[0]], \
+           os.path.splitext(source_file)[0]
 
 
 def compileclang(source_file: str, compilerflags: typing.List[str]) -> str:
@@ -98,118 +101,36 @@ def compileclang(source_file: str, compilerflags: typing.List[str]) -> str:
 
     p = subprocess.run(cmdd_clang, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=145)
     output, err = p.stdout, p.stderr
+
+    err = re.sub(
+        b"(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): the `gets' function is dangerous and should not be used\.\\n",
+        b"", err)
     if err != b'':
         raise Exception("Compiling Clang Error:" + str(err))
     else:
         return outfile
 
 
-
-def get_ifofstreampreprocesser_call(source_file: str, inputstreampath: str, outputstreampath: str,
-                                    ifopreppath: str, flags: typing.List[str]):
-    options1: str = "-inputstreampath={}".format(inputstreampath)
-    options2: str = "-outputstreampath={}".format(outputstreampath)
-    cmdd_transform = [ifopreppath, source_file, options1, options2, "--", *flags]
-    return cmdd_transform
-
-
-def ifofstreampreprocesser(source_file: str, inputstreampath: str, outputstreampath: str,
-                           ifopreppath: str, flags: typing.List[str]) -> typing.Tuple[bool, bool]:
-    """
-    We rewrite the given path where IO stream is reading from or writing to.
-    Calls the Ifstream Ofstream Preprocessor to modify the path of input and output stream files
-    so that we evaluate the program with our input / output paths.
-    :param source_file: the current source file
-    :param inputstreampath: the wanted inputstreampath
-    :param outputstreampath: the wanted outputstreampath
-    :param ifopreppath: the path to ifostream preprocessor.
-    :param flags: flags for clang
-    :return: an exception if rewriting was not possible, e.g. due to multiple output stream files...
-    otherwise with a 2-tuple that indicates if ifstream or ofstream was present so that we need to adapt
-    our input-to-output comparison way...
-    """
-    cmdd_transform = get_ifofstreampreprocesser_call(source_file=source_file, inputstreampath=inputstreampath,
-                                                     outputstreampath=outputstreampath, ifopreppath=ifopreppath,
-                                                     flags=flags)
-
-    with open((source_file + ".tempifof"), 'w') as target:
-        p = subprocess.run(cmdd_transform, stdout=target, stderr=subprocess.PIPE, shell=False, timeout=145)
-    output, err = p.stdout, p.stderr
-
-    if err != b'':
-        # parse output that we pass via stderr
-        if str(err).find("Replace:") != -1 and str(err).count("\\n") == 1:
-            # we create temporary output file that needs to be the new src_file where path were adapted...
-            os.remove(source_file)
-            shutil.move(source_file+".tempifof", source_file)
-            # parse the status if ifofstream occured..
-            splits = str(err).split(":")
-            return bool(strtobool(splits[1])), bool(strtobool(splits[2]))
-        else:
-            raise Exception("ifofstream preprocessor failure:" + str(err))
-    else:
-        raise Exception("ifofstream no output on stderr")
-
-
-def get_executecontestfile_call(source_file_executable: str, testfilein: str, testfileout: str,
-                       ifofstream: typing.Tuple[bool, bool]):
-
-    cmdd_run = [source_file_executable]
-    if not ifofstream[0]:
-        cmdd_run.extend(["<", testfilein])
-    if not ifofstream[1]:
-        cmdd_run.extend([">", testfileout])
-    return cmdd_run
-
-
-def executecontestfile(source_file_executable: str, testfilein: str, testfileout: str,
-                       ifofstream: typing.Tuple[bool, bool]) -> None:
+def executecontestfile(source_file_executable: str, testfilein: str, testfileout: str) -> None:
     """
     Executes the source file.
     :param source_file_executable: the path to the executable.
     :param testfilein: the path to file containing the tests
     :param testfileout: the wanted path to file containing the outputs of tests
-    :param ifofstream: a 2-tuple that indicates if ifstream or ofstream was present. If so, we do not need to
-    pipe an input / output
     """
     assert(os.path.exists(source_file_executable))
 
     # # A. Prepare Call Command
     cmdd_run = source_file_executable
-    # if not ifofstream[0]:
-    #     cmdd_run+= " < " + testfilein
-    # if not ifofstream[1]:
-    #     cmdd_run+= " > " + testfileout
-    #
-    # # B. Run program
-    # p = subprocess.run(cmdd_run, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, timeout=20)
 
     # New:
     timeouttime: int = 145*3
     # A. and B. Prepare Call Command depending on input / output behaviour
-    if not ifofstream[0]:
-        # input file is needed
-        if not ifofstream[1]:
-            # output file is needed
-            with open(testfileout, 'w') as targetfile:
-                with open(testfilein) as inputfile:
-                    p = subprocess.run(cmdd_run, stdout=targetfile, stderr=subprocess.PIPE, stdin=inputfile,
-                                       shell=False, timeout=timeouttime)
-        else:
-            # no output file
-            with open(testfilein) as inputfile:
-                p = subprocess.run(cmdd_run, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=inputfile,
-                                   shell=False, timeout=timeouttime)
-    else:
-        if not ifofstream[1]:
-            # output file is needed
-            with open(testfileout, 'w') as targetfile:
-                    p = subprocess.run(cmdd_run, stdout=targetfile, stderr=subprocess.PIPE,
-                                       shell=False, timeout=timeouttime)
-        else:
-            # no output file
-            p = subprocess.run(cmdd_run, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   shell=False, timeout=timeouttime)
+    preload_env = os.environ.copy()
+    preload_env["LD_PRELOAD"] = Configuration.iohookspath
+    preload_env["LD_LIBRARY_PATH"] = Configuration.customlibspath
+    p = subprocess.run(cmdd_run, stdout=open(testfileout, 'w'), stderr=subprocess.PIPE, stdin=open(testfilein),
+                       shell=False, timeout=timeouttime, env=preload_env)
 
     # C. Analyze output
     # output, err = p.stdout, p.stderr
@@ -220,7 +141,7 @@ def executecontestfile(source_file_executable: str, testfilein: str, testfileout
 
 
 def get_clang_format_call(source_file: str):
-    target_file: str = os.path.join(os.path.splitext(source_file)[0] + "_format.cpp")
+    target_file: str = os.path.join(os.path.splitext(source_file)[0] + "_format." + source_file.split(".")[-1])
     cmdd_format = ["clang-format", source_file]
     return cmdd_format, target_file
 
@@ -238,6 +159,8 @@ def do_clang_format(source_file: str):
         p = subprocess.run(cmdd_format, stdout=target, stderr=subprocess.PIPE, shell=False, timeout=145)
     output, err = p.stdout, p.stderr
 
+    err = re.sub(b"(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): "
+                 b"the `gets' function is dangerous and should not be used\.\\n", b"", err)
     if err != b'':
         raise Exception("Clang-format error:" + str(err))
     else:

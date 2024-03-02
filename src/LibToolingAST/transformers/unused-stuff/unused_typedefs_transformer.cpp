@@ -69,6 +69,32 @@ public:
                             // td is used inside of tl
                             typedef_vec.push_back(td);
                         }
+                        // handle function typedefs
+                        if (!isa<PointerType>(s.getTypePtr())) {
+                            continue;
+                        }
+
+                        if (s->isFunctionPointerType()) {
+                            s = s->getPointeeType();
+                        }
+                        if (s->isFunctionProtoType()) {
+                            // check return type
+                            if (s->getAs<FunctionProtoType>()->getReturnType().getAsString() ==
+                                tl->getQualifiedNameAsString()) {
+                                // td is used inside of tl
+                                typedef_vec.push_back(td);
+                            }
+                            // check params
+                            for (auto param : s->getAs<FunctionProtoType>()->param_types()) {
+                                if (param.getAsString() == tl->getQualifiedNameAsString()) {
+                                    // td is used inside of tl
+                                    typedef_vec.push_back(td);
+                                }
+                            }
+                            // if the same typedef occurs multiple times in params and/or return, remove all duplicates
+                            std::sort(typedef_vec.begin(), typedef_vec.end());
+                            typedef_vec.erase(std::unique(typedef_vec.begin(), typedef_vec.end()), typedef_vec.end());
+                        }
                     }
                 }
             }

@@ -1,0 +1,31 @@
+models:
+  - suffix:
+      "c_only_formatted_macrosremoved_commentsremoved"
+    type:
+      "c"
+    short:
+      "c_only"
+
+datasets:
+  c:
+    - dir:
+        "/tmp"
+      suffix:
+        "_test"
+      short:
+        "c_only"
+
+problems:
+  c:
+    - "1460488_1483485"
+    - "1460488_1483488"
+#    - "1460488_1595491"
+#    - "2270488_2449486"
+#    - "2270488_2453486"
+#    - "2270488_2463486"
+#    - "2974486_5709773144064000"
+#    - "2974486_5756407898963968"
+
+learning_methods:
+  - "RF"
+  - "RNN"

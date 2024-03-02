@@ -17,6 +17,7 @@
 #endif
 
 #include <string>
+#include <sstream>
 #include <regex>
 #include <algorithm>
 
@@ -125,7 +126,14 @@ std::vector<std::string> getMatches(std::string input, const std::string &regex)
  * @param f function decl
  * @return a unique identifier for f
  */
-std::string getUniqueFunctionNameAsString(const FunctionDecl* f);
+std::string getUniqueFunctionNameAsString(const FunctionDecl* f, bool withoutTempl=false);
+
+/**
+ * Determines if the current file is a c file based on it's file extension
+ * @param Context current ASTContext
+ * @return true if C file, false otherwise
+ */
+bool isCFile(const ASTContext &Context);
 
 /**
  * Returns the row and column number. If verbose is true, it will print the row and column number.
@@ -173,10 +181,10 @@ bool getParentOfWholeCommandLine(ast_type_traits::DynTypedNode dtn,
  * @param OurRewriter  Rewriter Instance.
  */
 void insertHeaderAtBeginningOfSourceFile(std::string headerstr,
-                             std::vector<std::pair<std::string, SourceLocation>>* headerincludes,
-                             Decl* firstDeclInSrcFile,
-                             SourceManager &sm,
-                             Rewriter &OurRewriter
+                                         std::vector<std::pair<std::string, SourceLocation>> *headerincludes,
+                                         Decl *firstDeclInSrcFile,
+                                         SourceManager &sm,
+                                         Rewriter &OurRewriter
 );
 
 /**
@@ -185,7 +193,7 @@ void insertHeaderAtBeginningOfSourceFile(std::string headerstr,
  * @param namespaces
  * @return true if targetns is in namespaces
  */
-bool namespace_defined(std::string targetns, std::vector<UsingDirectiveDecl*> namespaces);
+bool namespace_defined(std::string targetns, std::vector<UsingDirectiveDecl *> namespaces);
 
 #include "utils_transform.inl"
 

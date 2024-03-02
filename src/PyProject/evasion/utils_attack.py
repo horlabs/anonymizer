@@ -19,6 +19,9 @@ import subprocess
 import Configuration
 import sys
 
+import tempfile
+from pathlib import Path
+
 
 def extract_features_fromfeatureextraction(output: str, call_options: typing.List[str]) -> typing.Dict[str, typing.List[str]]:
     """
@@ -56,7 +59,8 @@ def get_clang_features_call(src: str, output_dir: str):
                     "-lexical_features=True"]
 
     cmdd_transform = [os.path.join(Configuration.featureextractordir_single, "feature_extraction_single"),
-                      src, *call_options, "--", *Configuration.flag_list]
+                      src, *call_options, "--",
+                      *(Configuration.flag_list_cpp if src.endswith(".cpp") else Configuration.flag_list_c)]
 
     tarfile = os.path.join(output_dir, "clang_features.dat")
     return cmdd_transform, call_options, tarfile
@@ -64,7 +68,7 @@ def get_clang_features_call(src: str, output_dir: str):
 
 def get_lexems_features_call(src: str, output_dir: str):
     cmdd_transform = [os.path.join(Configuration.featureextractordir, "get_lexems_features"),
-                      src, "--", *Configuration.flag_list]
+                      src, "--", *(Configuration.flag_list_cpp if src.endswith(".cpp") else Configuration.flag_list_c)]
     tarfile = os.path.join(output_dir, "lexems_features.dat")
     return cmdd_transform, tarfile
 
@@ -94,10 +98,32 @@ def extractfeatures_evasion(src: str, output_dir: str, use_arff: bool, use_clang
 
         cmdd_transform, call_options, targetfile = get_clang_features_call(src=src, output_dir=output_dir)
         if not already_extracted:
+            with tempfile.TemporaryDirectory() as tmp_path:
+                if Configuration.multifilesetup:
+                    author = Path(src).parent.name
+                    project = "/".join(Path(src).name.split("_")[:1])
+                    project = project.replace("-US-", "_").replace("-SL-", "/")
+                    subpath = "/".join(Path(src).name.split("_")[1:2])
+                    subpath = subpath.replace("-US-", "_").replace("-SL-", "/") + Path(src).suffix
+                    orig_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered/") / author / project
+                    macros_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/") / author / project
+                    tmp_dir = Path(tmp_path) / author / project
+                    shutil.copytree(orig_path, tmp_dir)
+                    os.system(f"cp -r {macros_path} {tmp_dir.parent}")
+                    link = tmp_dir / subpath
+                    link.unlink()
+                    link.symlink_to(Path(src))
+                    cmdd_transform = [x if x != src else str(link) for x in cmdd_transform]
+                with open(src, encoding="iso-8859-1") as f:
+                    if re.search("typedef [^;]* bool;", f.read()) is not None:
+                        cmdd_transform.append("-DBOOLTYPE")
 
-            p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=250)
+                p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=250)
 
             output, err = p.stdout, p.stderr
+            err = re.sub(
+                b"(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): the `gets' function is dangerous and should not be used\.\\n",
+                b"", err)
             if err != b'':
                 print("Error while loading new features for object:" + src + "call:" + str(cmdd_transform), file=sys.stderr)
                 print("Error: {}".format(str(err)), file=sys.stderr)
@@ -124,6 +150,9 @@ def extractfeatures_evasion(src: str, output_dir: str, use_arff: bool, use_clang
         cmdd_transform = " ".join(cmdd_transform)
         p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, timeout=145)
         output, err = p.stdout, p.stderr
+        err = re.sub(
+            b"(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): the `gets' function is dangerous and should not be used\.\\n",
+            b"", err)
         if err != b'':
             print("Error while loading new arff features for object:" + src, file=sys.stderr)
             raise Exception("arff feature extraction failure:" + str(err))
@@ -136,6 +165,9 @@ def extractfeatures_evasion(src: str, output_dir: str, use_arff: bool, use_clang
             p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=175)
 
             output, err = p.stdout, p.stderr
+            err = re.sub(
+                b"(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): the `gets' function is dangerous and should not be used\.\\n",
+                b"", err)
             if err != b'':
                 print("Error while loading new lexems features for object:" + src + "call:" + str(cmdd_transform), file=sys.stderr)
                 print("Error: {}".format(str(err)), file=sys.stderr)
@@ -219,6 +251,9 @@ def load_new_features_merged(datasetpath: str, attackdirauth: str, verbose: bool
 
 def __load_new_features(datasetpath: str, attackdirauth: str, verbose: bool, cppfile: str, train_object: StyloFeatures,
                         already_extracted: bool):
+    # TODO use utils_extraction_testtime.py and the new API create_stylo_object_from_train_object
+    # However, we need to optimize the way how clang objects are created. So far, we load the dict object
+    # for every sub-clang object, so it takes longer than necessary!
 
     # A. Determine what feature classes should be extracted via command-line
     #   (remember: unigram features are read from Python directly).

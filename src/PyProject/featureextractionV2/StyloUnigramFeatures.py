@@ -6,6 +6,8 @@ import numpy as np
 from scipy import sparse
 import utils_authorship
 import typing
+from pathlib import Path
+from featureextractionV2.StyloFeatures import StyloFeatures
 
 
 
@@ -75,7 +77,7 @@ class StyloUnigramFeatures(StyloFeaturesAbstract):
 
 
         # I. If we have a source file directly given, use it directly.
-        if inputdata.endswith("cpp"):
+        if Path(inputdata).is_file():
             with open(inputdata, "r", encoding='ISO-8859-1') as fh:
                 documents.append(fh.read())
                 documents_labels.append(os.path.basename(inputdata))
@@ -91,10 +93,16 @@ class StyloUnigramFeatures(StyloFeaturesAbstract):
                 assert len(programmers) == self.noprogrammers
 
             for pro in programmers:
-                progfiles = [f for f in os.listdir(pro) if os.path.isfile(os.path.join(pro, f)) and f.endswith("cpp")]
+                progfiles = [f for f in os.listdir(pro) if
+                             os.path.isfile(os.path.join(pro, f)) and f.endswith(("cpp", "c", "h"))]
 
                 if self.nocodesperprogrammer is not None:
-                    assert len(progfiles) == self.nocodesperprogrammer
+                    if len(progfiles) != self.nocodesperprogrammer * 2:
+                        assert len(progfiles) == self.nocodesperprogrammer, \
+                            f"{len(progfiles)} != {self.nocodesperprogrammer}"
+                    else:
+                        assert len([x for x in progfiles if x.endswith("_advex.c")]) == self.nocodesperprogrammer, \
+                            f"{len(progfiles)} != {self.nocodesperprogrammer}"
 
                 for progfile in progfiles:
                     with open(os.path.join(pro, progfile), "r", encoding='ISO-8859-1') as fh:
@@ -125,3 +133,28 @@ class StyloUnigramFeatures(StyloFeaturesAbstract):
 
         return feature_matrix, feature_names, authors, iids
 
+    def create_stylo_object_from_train_object(self, src: str,
+                                              inputdir: typing.Optional[str],
+                                              outputdir: str,
+                                              verbose: bool = None) -> 'StyloFeatures':
+
+        if src.endswith((".cpp", ".c", ".h")):
+            noofcodesperprogrammer = 1
+            noprogrammers = 1
+        else:
+            noofcodesperprogrammer = None  # do not know that here
+            noprogrammers = None  # do not know that here
+
+        unigrammmatrix_att = StyloUnigramFeatures(inputdata=src, nocodesperprogrammer=noofcodesperprogrammer,
+                                                  noprogrammers=noprogrammers, binary=False,
+                                                  tf=self.tf, idf=self.idf,
+                                                  ngram_range=self.ngram_range,
+                                                  stop_words=self.stop_words,
+                                                  trainobject=self)
+
+        if self.codestyloreference is not None:
+            x = self.codestyloreference.create_stylo_object_from_train_object(src=src, inputdir=inputdir,
+                                                                              outputdir=outputdir, verbose=verbose)
+            unigrammmatrix_att.setnextstylo(x)
+
+        return unigrammmatrix_att

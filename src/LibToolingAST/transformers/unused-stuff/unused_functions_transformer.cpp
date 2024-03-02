@@ -18,12 +18,15 @@
 #include "../ControlDataFlow/ControlFlowGraphWithDataFlow.h"
 #include "../ControlDataFlow/CDFGraphQueryHandler.h"
 #include "../include/SourceTextHelper.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/ASTMatchers/ASTMatchers.h"
 
 #include <string>
 #include <fstream>
 
 using namespace clang;
 using namespace llvm::cl;
+using namespace clang::ast_matchers;
 //#define MYDEBUG 1
 
 
@@ -49,6 +52,97 @@ static llvm::cl::opt<bool> OverloadedOpt("remove-overloaded",
                                               "Use with care as we cannot cover all usage cases here so far"),
                                   init(false), cat(MyOptionCategory));
 
+/**
+ * For some reason, not all Specifications will be found if we traverse the
+ * translationUnitDecl as is. Therefore, we force to traverse each
+ * ClassTemplateDecl and each ClassTemplateSpecializationDecl.
+ */
+class OperatorHelper : public RecursiveASTVisitor<OperatorHelper> {
+  public:
+    explicit OperatorHelper(ASTContext &Context,
+                            ControlFlowGraphWithDataFlow *graph)
+        : cfggraph(graph), Context(Context), sm(Context.getSourceManager()){};
+
+    bool VisitCXXOperatorCallExpr(CXXOperatorCallExpr *op) {
+        if (!sm.isWrittenInMainFile(op->getLocStart()) && 
+                !isa<UnresolvedLookupExpr>(op->getCallee()) &&
+                sm.isWrittenInMainFile(op->getCalleeDecl()->getLocStart())) {
+            FunctionDecl *main = [&]() -> FunctionDecl * {
+                for (auto decl : Context.getTranslationUnitDecl()->decls()) {
+                    if (isa<FunctionDecl>(decl) && cast<FunctionDecl>(decl)->isMain())
+                        return cast<FunctionDecl>(decl);
+                }
+                return nullptr;
+            }();
+            assert(main != nullptr);
+            Graph::vertex_descriptor main_vertex;
+            if (!cfggraph->findStartingVertexForFunction(
+                    getUniqueFunctionNameAsString(main), main_vertex)) {
+                cfggraph->addFunctionDecl(main, true);
+                cfggraph->findStartingVertexForFunction(
+                    getUniqueFunctionNameAsString(main), main_vertex);
+            }
+            // DSTVisitor will go one block back for searching, so get a successor
+            // from the entry
+            Graph::out_edge_iterator ei2, ei2_end;
+            std::vector<Graph::vertex_descriptor> out_vertices;
+
+            for (boost::tie(ei2, ei2_end) = out_edges(main_vertex, cfggraph->graph);
+                ei2 != ei2_end; ++ei2) {
+                if (!DFSVisitor::islocalcontrolflowedge(*ei2, &(cfggraph->graph)))
+                    continue;
+
+                Graph::vertex_descriptor target = boost::target(*ei2, cfggraph->graph);
+                out_vertices.push_back(target);
+            }
+            assert(!out_vertices.empty());
+            main_vertex = out_vertices[0];
+
+            Graph::vertex_descriptor callee_vertex;
+            if (!cfggraph->findStartingVertexForFunction(
+                    getUniqueFunctionNameAsString(op->getDirectCallee()),
+                    callee_vertex)) {
+                cfggraph->addFunctionDecl(op->getDirectCallee(), true);
+                cfggraph->findStartingVertexForFunction(
+                    getUniqueFunctionNameAsString(op->getDirectCallee()),
+                    callee_vertex);
+            }
+            std::pair<Graph::edge_descriptor, bool> e01 =
+                boost::add_edge(main_vertex, callee_vertex, cfggraph->graph);
+            cfggraph->graph[e01.first].interprocedural = true;
+        }
+        return true;
+    }
+
+    bool VisitClassTemplateSpecializationDecl(ClassTemplateSpecializationDecl *CTSD) {
+        if (std::find(visitedCTSD.begin(), visitedCTSD.end(), CTSD) !=
+                visitedCTSD.end())
+            return true;
+        visitedCTSD.push_back(CTSD);
+        for (auto decl : CTSD->decls()) {
+            TraverseDecl(decl);
+        }
+        return true;
+    }
+
+    bool VisitClassTemplateDecl(ClassTemplateDecl *CTD) {
+        if (std::find(visitedCTD.begin(), visitedCTD.end(), CTD) !=
+                visitedCTD.end())
+            return true;
+        visitedCTD.push_back(CTD);
+        for (auto spec : CTD->specializations()) {
+            TraverseDecl(spec);
+        }
+        return true;
+    }
+
+  private:
+    ControlFlowGraphWithDataFlow *cfggraph;
+    ASTContext &Context;
+    SourceManager &sm;
+    std::vector<ClassTemplateDecl *> visitedCTD;
+    std::vector<ClassTemplateSpecializationDecl *> visitedCTSD;
+};
 
 /**
  * We add or remove unused function code blocks.
@@ -75,14 +169,66 @@ public:
      * @return
      */
     bool VisitFunctionDecl(FunctionDecl *f) {
+        if (f->isDefaulted())
+            return true;
         bool inmainfile = sm.isInMainFile(f->getLocation());
         if (inmainfile) {
+            if (std::find(fctdecls.begin(), fctdecls.end(), f) != fctdecls.end())
+                return true;
             cfggraph->addFunctionDecl(f);
             this->fctdecls.push_back(f);
         }
         return true;
     }
 
+    bool VisitFunctionTemplateDecl(FunctionTemplateDecl *templateDecl) {
+        if (sm.isWrittenInMainFile(templateDecl->getLocStart())) {
+            VisitFunctionDecl(templateDecl->getTemplatedDecl());
+            for (auto spec : templateDecl->specializations()) {
+                if (std::find(fctdecls.begin(), fctdecls.end(), spec) != fctdecls.end())
+                    continue;
+
+                VisitFunctionDecl(spec);
+                Graph::vertex_descriptor spec_vertex;
+                if (!cfggraph->findStartingVertexForFunction(
+                        getUniqueFunctionNameAsString(spec), spec_vertex)) {
+                    cfggraph->addFunctionDecl(spec, true);
+                    cfggraph->findStartingVertexForFunction(
+                        getUniqueFunctionNameAsString(spec), spec_vertex);
+                }
+                // DSTVisitor will go one block back for searching, so get a successor
+                // from the entry
+                Graph::out_edge_iterator ei2, ei2_end;
+                std::vector<Graph::vertex_descriptor> out_vertices;
+
+                for (boost::tie(ei2, ei2_end) = out_edges(spec_vertex, cfggraph->graph);
+                        ei2 != ei2_end; ++ei2) {
+                    if (!DFSVisitor::islocalcontrolflowedge(*ei2, &(cfggraph->graph)))
+                        continue;
+
+                    Graph::vertex_descriptor target =
+                        boost::target(*ei2, cfggraph->graph);
+                    out_vertices.push_back(target);
+                }
+                assert(!out_vertices.empty());
+//                spec_vertex = out_vertices[0];
+
+                Graph::vertex_descriptor templ_vertex;
+                if (!cfggraph->findStartingVertexForFunction(
+                        getUniqueFunctionNameAsString(templateDecl->getTemplatedDecl()),
+                        templ_vertex)) {
+                    cfggraph->addFunctionDecl(templateDecl->getTemplatedDecl(), true);
+                    cfggraph->findStartingVertexForFunction(
+                        getUniqueFunctionNameAsString(templateDecl->getTemplatedDecl()),
+                        templ_vertex);
+                }
+                std::pair<Graph::edge_descriptor, bool> e01 =
+                    boost::add_edge(templ_vertex, spec_vertex, cfggraph->graph);
+                cfggraph->graph[e01.first].interprocedural = true;
+            }
+        }
+        return true;
+    }
 
     /* ******************* Rewriting Methods ******************* */
 
@@ -198,6 +344,10 @@ private:
             } else {
                 sr = getSourceRange(f1, sm, Context.getLangOpts());
             }
+            if (f1->isFunctionTemplateSpecialization()) {
+                sr = getSourceRange(f1->getTemplateSpecializationInfo()->getTemplate(),
+                                    sm, Context.getLangOpts());
+            }
             OurRewriter.RemoveText(sr);
             already_unused_fcts.insert(f1);
         }
@@ -208,6 +358,10 @@ private:
                 sr = getSourceRange(f2t, sm, Context.getLangOpts());
             } else {
                 sr = getSourceRange(f2, sm, Context.getLangOpts());
+            }
+            if (f2->isFunctionTemplateSpecialization()) {
+                sr = getSourceRange(f2->getTemplateSpecializationInfo()->getTemplate(),
+                                    sm, Context.getLangOpts());
             }
             OurRewriter.RemoveText(sr);
             already_unused_fcts.insert(f2);
@@ -289,7 +443,11 @@ public:
     }
 
     void HandleTranslationUnit(ASTContext &Context) override {
+        Matcher.matchAST(Context);
         Visitor.TraverseDecl(Context.getTranslationUnitDecl());
+
+        OperatorHelper helper = OperatorHelper(Context, Visitor.cfggraph);
+        helper.TraverseDecl(Context.getTranslationUnitDecl());
 
         Visitor.replacecommand(StrategyOpt.getValue(), SeedOpt.getValue(),
                                AddFunctionOpt.getValue(), SourceOpt.getValue(),
@@ -298,6 +456,7 @@ public:
 
 private:
     UnusedFunctionsTransformer Visitor;
+    MatchFinder Matcher;
 };
 
 int main(int argc, const char **argv) {

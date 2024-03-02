@@ -212,8 +212,63 @@ private:
 
         auto srctext = getSourceText(Context, e);
         if (srctext.find("stdin") != std::string::npos){
-            // just small check with stdin
-            OurRewriter.RemoveText(getSourceRangeWithSemicolon(Context, e));
+            auto parent = Context.getParents(*e)[0];
+            auto bop = parent.get<BinaryOperator>();
+            if (bop && bop->isAssignmentOp()) {
+                if (auto declref = dyn_cast<DeclRefExpr>(bop->getLHS())) {
+                    auto declrange = declref->getDecl()->getSourceRange();
+                    auto startloc = declref->getDecl()->getLocation();
+                    auto endloc = declref->getDecl()->getLocEnd();
+                    auto firstchar =
+                        getSourceText(Context, startloc.getLocWithOffset(-1), endloc)[0];
+                    while (firstchar == ' ' || firstchar == '*') {
+                        startloc = startloc.getLocWithOffset(-1);
+                        firstchar = getSourceText(Context, startloc.getLocWithOffset(-1),
+                                                endloc)[0];
+                    }
+                    auto decltext = getSourceText(Context, startloc, endloc);
+                    endloc = startloc.getLocWithOffset(decltext.size() - 1);
+                    decltext = getSourceText(Context, startloc, endloc.getLocWithOffset(1));
+                    while (decltext[decltext.size() - 1] == ' ') {
+                        endloc = endloc.getLocWithOffset(1);
+                        decltext = getSourceText(Context, startloc, endloc.getLocWithOffset(1));
+                    }
+                    firstchar =
+                        getSourceText(Context, startloc.getLocWithOffset(-1), endloc)[0];
+                    auto lastchar = decltext[decltext.size() - 1];
+                    if (lastchar == ',') {
+                        endloc = endloc.getLocWithOffset(1);
+                        declrange = SourceRange(startloc, endloc);
+                    } else if (firstchar == ',') {
+                        startloc = startloc.getLocWithOffset(-1);
+                        declrange = SourceRange(startloc, endloc);
+                    } else {
+                        declrange =
+                            getSourceRangeWithSemicolon(Context, declref->getDecl());
+                    }
+
+                    OurRewriter.RemoveText(declrange);
+                    auto range = this->declMap.equal_range(declref->getDecl());
+                    for (auto it = range.first; it != range.second; it++) {
+                        auto ref = it->second;
+                        auto p = Context.getParents(*ref)[0];
+                        if (p.get<ImplicitCastExpr>()) {
+                            p = Context.getParents(p)[0];
+                        }
+                        if (p.get<BinaryOperator>() &&
+                            p.get<BinaryOperator>()->isAssignmentOp()) {
+                            OurRewriter.RemoveText(getSourceRangeWithSemicolon(
+                                Context, p.get<BinaryOperator>()));
+                        } else if (p.get<CallExpr>()) {
+                            OurRewriter.RemoveText(
+                                getSourceRangeWithSemicolon(Context, p.get<CallExpr>()));
+                        }
+                    }
+                }
+            } else {
+                // just small check with stdin
+                OurRewriter.RemoveText(getSourceRangeWithSemicolon(Context, e));
+            }
             return true;
         }
         return false;

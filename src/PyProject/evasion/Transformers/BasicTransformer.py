@@ -18,7 +18,6 @@ class BasicTransformer(TransformerBase):
 
         # Path to clang-based transformer executables
         self.transformersdir = transformersdir
-        self.flags = Config.flag_list
 
 
     #@Overwrite
@@ -34,7 +33,8 @@ class BasicTransformer(TransformerBase):
             options.extend(self.handle_special_case(seed=seed))
 
         cmdd_transform = [os.path.join(self.transformersdir, self.transformer), source_file,
-                          *options, "--", *self.flags]
+                          *options, "--",
+                          *(Config.flag_list_cpp if source_file.endswith(".cpp") else Config.flag_list_c)]
 
         simplified_cmdd_transform = " ".join([self.transformer, source_file, *options, "--", "..."])
 

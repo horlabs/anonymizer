@@ -25,9 +25,11 @@ from evasion.BlackBox.AMCTS.Tree import Tree
 from evasion.BlackBox.AMCTS.Node import Node
 from evasion.BlackBox.AMCTS.StateWithAttackInstance import StateWithAttackInstance
 import evasion.BlackBox.AMCTS.State
-from evasion.BlackBox.AttackSettings import MCTSClassicSettings
+from evasion.BlackBox.AttackSettings import MCTSClassicSettings, MCTSAnonymSettings
 from evasion.BlackBox.AMCTS.MCTS_Utils import ExpandNodeException
 import evasion.BlackBox.AMCTS.UCTHeuristic as UCTHeuristic
+from classification.MismatchException import MismatchException
+from anonymize.BBAttackInstance import BBAttackInstance as BBAttackInstance_Anonym
 
 
 class AMonteCarloTreeSearch(BBAttackHandler):
@@ -67,12 +69,21 @@ class AMonteCarloTreeSearch(BBAttackHandler):
 
     # @Overwrite
     def run_attack(self) -> AttackResult:
-
+        attackInstance: typing.Optional[BBAttackInstance] = None
         try:
             # A. Init Attack Instance
-            attackinstance = BBAttackInstance(sourceauthor = self.sauthor, attackdirauth=self.attackdirauth,
-                                              targetauthor = self.tauthor, bbattackhandler=self)
-            self.attackresult.initial_feature_vec = attackinstance.attack_data_merged.getfeaturematrix()[0, :].toarray().reshape(-1)
+            if isinstance(self.mctssettings, MCTSAnonymSettings):
+                attackinstance = BBAttackInstance_Anonym(sourceauthor=self.sauthor, attackdirauth=self.attackdirauth,
+                                                         targetauthor=self.tauthor, bbattackhandler=self,
+                                                         attacksettings=self.mctssettings)
+            else:
+                attackinstance = BBAttackInstance(sourceauthor=self.sauthor, attackdirauth=self.attackdirauth,
+                                                  targetauthor=self.tauthor, bbattackhandler=self)
+            self.attackresult.initial_feature_vec = attackinstance.attack_data_merged.getfeaturematrix()[0,
+                                                    :].toarray().reshape(-1)
+            self.attackresult.initial_distance = attackinstance.original_predscore
+            if isinstance(attackinstance, BBAttackInstance_Anonym):
+                self.attackresult.final_distance = self.attackresult.initial_distance
 
             current_root_node: Node = self.tree.root
             root_state: StateWithAttackInstance = StateWithAttackInstance(transformer=None,
@@ -103,8 +114,11 @@ class AMonteCarloTreeSearch(BBAttackHandler):
 
             # C. Finally, collect further information about source file after evasion
             self.attackresult.final_feature_vec = attackinstance.attack_data_merged.getfeaturematrix()[0,
-                                                 :].toarray().reshape(-1)
-            assert attackinstance.log_chosentransformers.shape[1] == 5  # we expect 5 columns, adapt this value if more..
+                                                  :].toarray().reshape(-1)
+            assert attackinstance.log_chosentransformers.shape[
+                       1] == 5  # we expect 5 columns, adapt this value if more..
+            if isinstance(attackinstance, BBAttackInstance_Anonym):
+                self.attackresult.final_distance = attackinstance.scoreprednew
             self.attackresult.log_chosentransformers = attackinstance.log_chosentransformers
             self.attackresult.extract_changes_linesofcode(pathtooriginalfile=attackinstance.original_source_file,
                                                          pathtonewfile=attackinstance.source_file)
@@ -113,7 +127,12 @@ class AMonteCarloTreeSearch(BBAttackHandler):
                                                   format(self.attackresult.attackstatus.name, self.sauthor.author,
                                                          self.tauthor.author))
 
-
+        except MismatchException as e:
+            err_msg: str = "***MCTS: Unexpected ERROR *** {} -> {} with {}".format(
+                self.sauthor.author, self.tauthor.author, str(e))
+            print(err_msg, file=sys.stderr)
+            self.attackresult.attackstatus = AttackStatus.ERROR
+            self.attackresult.error_message = [str(err_msg)]
         except Exception as e:
             err_msg: str = "***MCTS: Unexpected ERROR *** {} -> {} with {}".format(
                 self.sauthor.author, self.tauthor.author, str(e))
@@ -471,6 +490,11 @@ class AMonteCarloTreeSearch(BBAttackHandler):
 
 
     def wasattacksuccessfull(self, attackinstance: BBAttackInstance):
+        if isinstance(self.mctssettings, MCTSAnonymSettings):
+            if attackinstance.scoreprednew < self.mctssettings.max_distance:
+                return True
+            else:
+                return False
 
         if (self.sauthor.true_class == self.tauthor.true_class and
             self.sauthor.true_class != attackinstance.classprednew) or \

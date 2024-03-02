@@ -1,8 +1,13 @@
 import os
+import re
+import shutil
 import subprocess
+import tempfile
 import time
 import typing
-from distutils.util import strtobool
+from collections import namedtuple
+from multiprocessing import Pool
+from pathlib import Path
 
 import Configuration as Config
 import evasion.utils_attack
@@ -12,6 +17,13 @@ from evasion.Transformers.TransformerBase import TransformerBase
 from featureextractionV2.ClangTypes.StyloClangFeaturesGenerator import StyloClangFeaturesGenerator
 from featureextractionV2.ClangTypes.StyloLexemFeaturesGenerator import StyloLexemFeatureGenerator
 from featureextractionV2.StyloFeatures import StyloFeatures
+
+TransformDetails = namedtuple("TransformDetails",
+                              ["source_file", "source_file_copy", "savesrc_1", "cmdd_transform", "error_file",
+                               "source_file_modified", "savesrc_2", "clangformat_cmd", "source_file_format",
+                               "savesrc_3"])
+CompileDetails = namedtuple("CompileDetails",
+                            ["clangcompile_cmd", "error_file", "execute_cmd", "clang_call_cmd", "lexems_call_cmd"])
 
 
 class BBBatchAttackInstanceHandler:
@@ -53,32 +65,13 @@ class BBBatchAttackInstanceHandler:
                 trainobj=train_obj) else self.dolexems
             train_obj = train_obj.codestyloreference
 
-
-    def call_gnu_parallel(self, timeout, shfile, ind_timeout):
-        gnu_parallel_cmd = ["find", self.attackdirauth, "-type", "f", "|", "grep", shfile, "|", "parallel", "-j",
-                            str(self.noofcores), "--timeout", str(ind_timeout), "'bash", "{}'"]
-        with open(os.path.join(self.attackdirauth, "execute_all.sh"), "w") as f:
-            f.write(" ".join(gnu_parallel_cmd))
-
-        p = subprocess.run(["bash", os.path.join(self.attackdirauth, "execute_all.sh")],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=timeout)
-        output, err = p.stdout, p.stderr
-        if err != b'':
-            # raise Exception("Execute gnu parallel exception:" + str(err))
-            # we should handle errors in subsequent anaylsis
-            pass
-
-        if os.path.exists(os.path.join(self.attackdirauth, "execute_all.sh")):
-            os.remove(os.path.join(self.attackdirauth, "execute_all.sh"))
-
-
     def batch_do_transformations(self):
 
         time1 = time.time()
-        self.transform_format_preprocess() # done via gnu parallel
-        nextround: list = self.transform_output_anaylsis() # done in python
+        self.transform_format_preprocess()  # done in python
+        nextround: list = self.transform_output_anaylsis()  # done in python
         time2 = time.time()
-        self.compile_hash(nextround) # done via gnu parallel, the prediction in python...
+        self.compile_hash(nextround)  # done in python
         finalround: list = self.compile_hash_analysis(nextround)
         time3 = time.time()
         self.model_prediction(finalround)
@@ -86,9 +79,58 @@ class BBBatchAttackInstanceHandler:
         # print("Transform:{}s, Execute:{}s, Prediction:{}s".format(time2-time1, time3-time2, time4-time3))
         return self.outputlist
 
+    @staticmethod
+    def do_transform_format(details: 'TransformDetails'):
+        shutil.copyfile(details.source_file, details.source_file_copy)
+        if details.savesrc_1 is not "":
+            shutil.copyfile(details.source_file, details.savesrc_1)
+        
+        cmd_transform = details.cmdd_transform
+        clangformat_cmd = details.clangformat_cmd
+        
+        with tempfile.TemporaryDirectory() as tmp_path:
+            if Config.multifilesetup:
+                srcfile = Path(cmd_transform[1])
+                idx = 1
+                if srcfile.suffix not in [".c", ".h"]:
+                    srcfile = Path(cmd_transform[2])
+                    idx = 2
+                author = srcfile.parent.name
+                project = "/".join(srcfile.name.split("_")[:1])
+                project = project.replace("-US-", "_").replace("-SL-", "/")
+                subpath = "/".join(srcfile.name.split("_")[1:2]) + Path(srcfile).suffix
+                subpath = subpath.replace("-US-", "_").replace("-SL-", "/")
+                orig_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered/") / author / project
+                macros_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/") / author / project
+                tmp_dir = Path(tmp_path) / author / project
+                shutil.copytree(orig_path, tmp_dir)
+                os.system(f"cp -r {macros_path} {tmp_dir.parent}")
+                link = tmp_dir / subpath
+                link.unlink()
+                link.symlink_to(srcfile)
+                cmd_transform[idx] = str(link)
+                clangformat_cmd[1] = str(link)
+            with open(srcfile, encoding="iso-8859-1") as f:
+                    if re.search("typedef [^;]* bool;", f.read()) is not None:
+                        cmd_transform.append("-DBOOLTYPE")
+
+            s = subprocess.run([x.replace("\"", "") for x in cmd_transform], stderr=subprocess.PIPE,
+                    stdout=open(details.source_file_modified, "w"))
+        with open(details.error_file, "wb") as f:
+            f.write(s.stderr)
+        if details.savesrc_2 is not "":
+            shutil.copyfile(details.source_file_modified, details.savesrc_2)
+        subprocess.run(details.clangformat_cmd, stderr=open(details.error_file, "a"),
+                       stdout=open(details.source_file_format, "w"))
+        shutil.copyfile(details.source_file_format, details.source_file)
+        if details.savesrc_3 is not "":
+            shutil.copyfile(details.source_file, details.savesrc_3)
+
+        Path(details.source_file_modified).unlink()
+        Path(details.source_file_format).unlink()
 
     def transform_format_preprocess(self):
-
+        process_details = []
         ix: int = -1
         for inputparams in self.inputlist:
             ix += 1
@@ -96,10 +138,10 @@ class BBBatchAttackInstanceHandler:
             prefix: str = str(inputparams[1])
 
             source_file_copy = curbbattinst.source_file + ".original"
-            copy_cmd = ["cp", curbbattinst.source_file, source_file_copy,"\n\n"]
 
             # A. + B. Transformation Call + clang-format
-            source_file_modified = os.path.splitext(curbbattinst.source_file)[0] + "_raw.cpp"
+            source_file_modified = os.path.splitext(curbbattinst.source_file)[0] + "_raw." + \
+                                   curbbattinst.source_file.split(".")[-1]
 
             cmdd_transform, simplified_cmdd_transform = inputparams[2].getsubprocesscall(
                                                                     source_file=curbbattinst.source_file,
@@ -111,17 +153,6 @@ class BBBatchAttackInstanceHandler:
             clangformat_cmd, source_file_format = evasion.utils_attack_workflow.get_clang_format_call(
                 source_file=source_file_modified)
 
-            # C. Check if transformation has changed IO behaviour
-            # In contrast to BBAttackInstance, we save ifostream into source-file directly, not format-file!
-            testfileout_test = os.path.join(os.path.dirname(source_file_format), "A-small-practice_transformation.out")
-            ifostream_cmd = evasion.utils_attack_workflow.get_ifofstreampreprocesser_call(source_file=source_file_format,
-                                                                          inputstreampath=curbbattinst.testfilein,
-                                                                          outputstreampath=testfileout_test,
-                                                                          ifopreppath=Config.ifostreampreppath,
-                                                                          flags=Config.flag_list)
-
-            error_file_ifo = os.path.join(curbbattinst.source_file + ".ifo.stderr")
-
             # Log files
             savesrc_1 = self.__save_source_file(src_file=curbbattinst.source_file, prefix=prefix,
                                     ending="before", bbatt=curbbattinst)
@@ -130,24 +161,27 @@ class BBBatchAttackInstanceHandler:
             savesrc_3 = self.__save_source_file(src_file=curbbattinst.source_file, prefix=prefix,
                                     ending="final", bbatt=curbbattinst)
 
+            process_details.append(
+                TransformDetails(curbbattinst.source_file, source_file_copy, savesrc_1, cmdd_transform, error_file,
+                                 source_file_modified,
+                                 savesrc_2, clangformat_cmd, source_file_format,
+                                 savesrc_3))
 
-            with open(os.path.join(curbbattinst.attackdirauth, "execute.sh"), "w") as f:
-                cmdd_transform.extend(["2>", error_file, "1>", source_file_modified,"\n\n"])
-                clangformat_cmd.extend(["2>>", error_file, "1>", source_file_format,"\n\n"])
-                ifostream_cmd.extend(["2>>", error_file_ifo, "1>", curbbattinst.source_file,"\n\n"])
-                f.write(" ".join(copy_cmd))
-                f.write(savesrc_1)
-                f.write(" ".join(cmdd_transform))
-                f.write(savesrc_2)
-                f.write(" ".join(clangformat_cmd))
-                f.write(" ".join(ifostream_cmd))
-                f.write(savesrc_3)
-                f.write("rm " + source_file_modified + "\n\n")
-                f.write("rm " + source_file_format + "\n\n")
-
-        # now call all scripts in parallel via gnu parallel
-        self.call_gnu_parallel(timeout=60*4, shfile="execute.sh", ind_timeout=60*3)
-
+        pool = Pool(processes=self.noofcores)
+        try:
+            for _ in pool.imap_unordered(BBBatchAttackInstanceHandler.do_transform_format, process_details):
+                pass
+        except Exception as e:
+            print(e)
+            pass
+        finally:
+            try:
+                pool.terminate()
+                pool.close()
+            except BrokenPipeError:
+                pass
+            except Exception:
+                pass
 
     def transform_output_anaylsis(self):
 
@@ -163,39 +197,30 @@ class BBBatchAttackInstanceHandler:
 
             try:
                 error_file = os.path.join(curbbattinst.source_file + ".stderr")
-                error_file_ifo = os.path.join(curbbattinst.source_file + ".ifo.stderr")
 
                 # A. + B. Transformer + clang-format
                 self.__check_error_file(error_file)
 
-                # C. ifo,
-                if not os.path.isfile(error_file_ifo):
-                    raise Exception("Error-ifostream-prep. file does not exist")
-                if os.path.getsize(error_file_ifo) == 0:
-                    raise Exception("ifofstream no output on stderr")
-                ifofstream = None
-                with open(error_file_ifo, "r") as f:
-                    lines = f.readlines()
-                    if len(lines) == 1 and str(lines).find("Replace:") != -1:
-                        splits = str(lines[0]).split(":")
-                        ifofstream = bool(strtobool(splits[1])), bool(strtobool(splits[2]))
-                    else:
-                        raise Exception("ifofstream preprocessor failure:" + str(lines))
-
-                qualified_for_next_round[ix] = (True, ifofstream)
+                qualified_for_next_round[ix] = True
 
             except Exception as e:
                 # we only show an exception if we have a real error. If transformation was not possible, we do not show it.
                 # But careful. We might have got an exception, continued and then have got Code 123. In this case,
                 # we want to show the error as well; we should have multiple error lines == checked by first if-condition:
-                if ("Code 123" in str(e) or "Code 124" in str(e)) and str(e).count("\\n") == 1:
+                e_str = "".join(x.strip() for x in e.args)
+                e_str = e_str.replace("\"Callee 'Main' is unknown; in CFGQueryHandler, main possibly gets args\\n\", 'Could not find first stmt of main fct\\n', ", "")
+                e_str = e_str.replace("'Could not find main in get_unused_functions\\n'", "Code 123\\n")
+                if e_str == "":
+                    continue
+                if ("Code 123" in e_str or "Code 124" in e_str) and e_str.count("\\n") == 1:
                     pass
-                elif "Code 900" in str(e) and str(e).count("\\n") == 1:
+                elif "Code 900" in e_str and e_str.count("\\n") == 1:
                     pass
                 else:
-                    curbbattinst.logger.error("`{}`, T-id:{}, failed with: {}\n".format(simplified_cmdd_transform, prefix, e))
+                    curbbattinst.logger.error(
+                        "`{}`, T-id:{}, transformation failed with: {}\n".format(simplified_cmdd_transform, prefix, e)) # e_str
 
-                qualified_for_next_round[ix] = (False, None)
+                qualified_for_next_round[ix] = False
 
                 # we restore the original file...
                 source_file_copy = curbbattinst.source_file + ".original"
@@ -205,16 +230,86 @@ class BBBatchAttackInstanceHandler:
 
         return qualified_for_next_round
 
+    @staticmethod
+    def do_compile_hash(details: 'CompileDetails'):
+        preload_env = os.environ.copy()
+        preload_env["LD_PRELOAD"] = Config.iohookspath
+        preload_env["LD_LIBRARY_PATH"] = Config.customlibspath
+        cwd = str(Path(details.execute_cmd[0]).parent)
+        with tempfile.TemporaryDirectory() as tmp_path:
+            try:
+                clangcompile_cmd = details.clangcompile_cmd
+                idx = 0
+                for idx, x in enumerate(clangcompile_cmd):
+                    if x.endswith((".c", ".h")) and not x.endswith("nocstd.h"):
+                        break
+                srcfile = Path(clangcompile_cmd[idx])
+                if Config.multifilesetup:
+                    author = srcfile.parent.name
+                    project = "/".join(srcfile.name.split("_")[:1])
+                    project = project.replace("-US-", "_").replace("-SL-", "/")
+                    subpath = "/".join(srcfile.name.split("_")[1:2]) + Path(srcfile).suffix
+                    subpath = subpath.replace("-US-", "_").replace("-SL-", "/")
+                    orig_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered/") / author / project
+                    macros_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/") / author / project
+                    tmp_dir = Path(tmp_path) / author / project
+                    shutil.copytree(orig_path, tmp_dir)
+                    os.system(f"cp -r {macros_path} {tmp_dir.parent}")
+                    link = tmp_dir / subpath
+                    link.unlink()
+                    link.symlink_to(srcfile)
+                    clangcompile_cmd[idx] = str(link)
+                with open(srcfile, encoding="iso-8859-1") as f:
+                    if re.search("typedef [^;]* bool;", f.read()) is not None:
+                        clangcompile_cmd.append("-DBOOLTYPE")
 
+                with open(details.error_file, "w") as f:
+                    s = subprocess.run(clangcompile_cmd, stderr=f, stdout=f, cwd=link.parent if Config.multifilesetup else cwd)
+                    s.check_returncode()
+                infile = details.execute_cmd[1]
+                outfile = details.execute_cmd[2]
+                execute_process = subprocess.run(details.execute_cmd[0],
+                                                 stdin=open(infile, "r"),
+                                                 stderr=subprocess.DEVNULL,
+                                                 stdout=open(outfile, "w"), cwd=cwd, env=preload_env)
+                # if outfile is not None and (execute_process.stdout != b"" or not Path(details.execute_cmd[-1]).exists()):
+                #     with open(details.execute_cmd[-1], "wb") as f:
+                #         f.write(execute_process.stdout)
+                assert (Path(outfile).exists())
+                if len(details.clang_call_cmd) > 0:
+                    clang_call_cmd = details.clang_call_cmd[0]
+                    idx = 0
+                    for idx, x in enumerate(clang_call_cmd):
+                        if x.endswith((".c", ".h")) and not x.endswith("nocstd.h"):
+                            break
+                    if Config.multifilesetup:
+                        clang_call_cmd[idx] = str(link)
+                    with open(clang_call_cmd[idx], encoding="iso-8859-1") as f:
+                        if re.search("typedef [^;]* bool;", f.read()) is not None:
+                            clang_call_cmd.append("-DBOOLTYPE")
+                    subprocess.run(clang_call_cmd, stderr=open(details.clang_call_cmd[1], "w"),
+                                   stdout=open(details.clang_call_cmd[2], "w"), cwd=cwd)
+            except Exception as e:
+                print("Exception:", e)
+                pass
+            if len(details.lexems_call_cmd) > 0:
+                lexems_call_cmd = details.lexems_call_cmd[0]
+                if Config.multifilesetup:
+                    idx = 0
+                    for idx, x in enumerate(lexems_call_cmd):
+                        if x.endswith((".c", ".h")) and not x.endswith("nocstd.h"):
+                            break
+                    lexems_call_cmd[idx] = str(link)
+                subprocess.run(lexems_call_cmd, stderr=open(details.clang_call_cmd[1], "w"),
+                            stdout=open(details.clang_call_cmd[2], "w"), cwd=cwd)
 
     def compile_hash(self, qualified_for_next_round: typing.List[typing.Tuple]):
 
         # I. COMPILE + HASH
+        process_details = []
         for ix, inputparams in enumerate(self.inputlist):
-            if qualified_for_next_round[ix][0] is False:
+            if qualified_for_next_round[ix] is False:
                 continue
-            assert qualified_for_next_round[ix][1] is not None
-
 
             curbbattinst: BBAttackInstance = inputparams[0]
 
@@ -223,14 +318,14 @@ class BBBatchAttackInstanceHandler:
 
             # D. check if transformation was successful
             error_file = os.path.join(source_file_final + ".compiled" + ".stderr")
-            clangcompile_cmd, source_file_format_exe = evasion.utils_attack_workflow.get_compileclang_call(source_file=source_file_final,
-                                                                                              compilerflags=Config.compilerflags_list)
+
+            clangcompile_cmd, source_file_format_exe = evasion.utils_attack_workflow.get_compileclang_call(
+                source_file=source_file_final,
+                compilerflags=Config.flag_list_cpp if source_file_final.endswith(".cpp") else Config.flag_list_c)
 
             # D.2 Execute cmd...
-            execute_cmd = evasion.utils_attack_workflow.get_executecontestfile_call(
-                source_file_executable=source_file_format_exe, testfilein=curbbattinst.testfilein,
-                testfileout=testfileout_test, ifofstream=qualified_for_next_round[ix][1]
-            )
+            execute_cmd = (source_file_format_exe, curbbattinst.testfilein,
+                           testfileout_test)
 
             # D.3 compute hash,
             #hashout_file = os.path.join(source_file_final + ".md5_hash")
@@ -244,36 +339,40 @@ class BBBatchAttackInstanceHandler:
             if self.dojoern:
                 clang_call_cmd, _, clang_tarfile = evasion.utils_attack.get_clang_features_call(
                     src=source_file_final, output_dir=curbbattinst.attackdirauth)
-                clang_call_cmd.extend(["2>", error_file_clang, "1>", clang_tarfile, "\n\n"])
+                clang_call_cmd = (clang_call_cmd, error_file_clang, clang_tarfile)
             else:
                 clang_call_cmd = []
             if self.dolexems:
                 lexems_call_cmd, lexems_tarfile = evasion.utils_attack.get_lexems_features_call(
                     src=source_file_final, output_dir=curbbattinst.attackdirauth)
-                lexems_call_cmd.extend(["2>", error_file_lexems, "1>", lexems_tarfile, "\n\n"])
+                lexems_call_cmd = (lexems_call_cmd, error_file_lexems, lexems_tarfile)
             else:
                 lexems_call_cmd = []
 
+            process_details.append(
+                CompileDetails(clangcompile_cmd, error_file, execute_cmd, clang_call_cmd, lexems_call_cmd))
 
-            with open(os.path.join(curbbattinst.attackdirauth, "execute_compile.sh"), "w") as f:
-                clangcompile_cmd.extend(["&>", error_file, "\n\n"])
-                execute_cmd.extend(["\n\n"])
-                f.write(" ".join(clangcompile_cmd))
-                f.write(" ".join(execute_cmd))
-                f.write(" ".join(clang_call_cmd))
-                f.write(" ".join(lexems_call_cmd))
-                #f.write(" ".join(hash_cmd))
-
-        # now call all scripts in parallel via gnu parallel
-        self.call_gnu_parallel(timeout=70*6, shfile="execute_compile.sh", ind_timeout=70*4)
-
+        pool = Pool(processes=self.noofcores)
+        try:
+            for _ in pool.imap_unordered(BBBatchAttackInstanceHandler.do_compile_hash, process_details):
+                pass
+        except Exception as e:
+            pass
+        finally:
+            try:
+                pool.terminate()
+                pool.close()
+            except BrokenPipeError:
+                pass
+            except Exception:
+                pass
 
     def compile_hash_analysis(self, qualified_for_next_round: typing.List[typing.Tuple]):
 
         # II. ANALYSIS
         qualified_for_final_round = [False] * len(self.inputlist)
         for ix, inputparams in enumerate(self.inputlist):
-            if qualified_for_next_round[ix][0] is False:
+            if qualified_for_next_round[ix] is False:
                 continue
 
             curbbattinst: BBAttackInstance = inputparams[0]
@@ -289,6 +388,7 @@ class BBBatchAttackInstanceHandler:
                 # Compilation Error?
                 self.__check_error_file(error_file)
 
+                #if "_github" not in curbbattinst.source_file and False: # TODO: Watchout! Only for github!
                 # Output behaviour changed?
                 transformedhash = evasion.utils_attack_workflow.computeHash(source_file=testfileout_test)
                 if transformedhash != curbbattinst.originaloutputhash:
@@ -311,8 +411,8 @@ class BBBatchAttackInstanceHandler:
 
             except Exception as e:
                 curbbattinst.logger.error(
-                    "`{}`, T-id:{}, failed with: {}\n".format(simplified_cmdd_transform, prefix, e))
-                # we restore the original file...
+                    "`{}`, T-id:{}, compilation failed with: {}\n".format(simplified_cmdd_transform, prefix, e))
+                # we restore the original file... TODO check if necessary
                 source_file_copy = curbbattinst.source_file + ".original"
                 os.rename(source_file_copy, curbbattinst.source_file)
 
@@ -323,12 +423,16 @@ class BBBatchAttackInstanceHandler:
 
     def __check_error_file(self, err_file: str):
         if not os.path.isfile(err_file):
-            raise Exception("Error file does not exist")
+            raise Exception(f"Error file {err_file} does not exist")
 
         if os.path.getsize(err_file) > 0:
             with open(err_file, "r") as f:
                 lines = f.readlines()
-            raise Exception(str(lines))
+            if not re.match(
+                    "^(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): "
+                    "the `gets' function is dangerous and should not be used\.\\n$",
+                    "".join(lines)):
+                raise Exception(str(lines))
 
 
     def model_prediction(self, qualified_for_final_round: typing.List[bool]):
@@ -362,10 +466,6 @@ class BBBatchAttackInstanceHandler:
 
         if Config.savemorelogfiles:
             b = bbatt.get_source_log_file_target(src_file=src_file, prefix=prefix, ending=ending)
-            return " ".join(["cp", src_file, b, "\n"])
-
+            return b
         else:
-            return "\n"
-
-
-
+            return ""

@@ -6,6 +6,9 @@ from scipy import sparse
 import utils_authorship
 import typing
 
+import featureextractionV2.utils_extraction_testtime
+from featureextractionV2.StyloFeatures import StyloFeatures
+
 
 class StyloARFFFeatures(StyloFeaturesAbstract):
     """
@@ -109,4 +112,23 @@ class StyloARFFFeatures(StyloFeaturesAbstract):
                 column_names[i].colname = column_names[i].colname.replace("log", "")
         return sparse.csr_matrix(data), column_names
 
+    def create_stylo_object_from_train_object(self,
+                                              src: str,
+                                              inputdir: typing.Optional[str],
+                                              outputdir: str,
+                                              verbose: bool = None) -> 'StyloFeatures':
 
+        targetdir = featureextractionV2.utils_extraction_testtime.extractfeatures_arff(
+            output_dir=outputdir,
+            src=src,
+            input_dir=inputdir
+        )
+
+        arffmatrix_att = StyloARFFFeatures(inputdata=targetdir, removelog=True)
+
+        if self.codestyloreference is not None:
+            x = self.codestyloreference.create_stylo_object_from_train_object(src=src, inputdir=inputdir,
+                                                                              outputdir=outputdir)
+            arffmatrix_att.setnextstylo(x)
+
+        return arffmatrix_att

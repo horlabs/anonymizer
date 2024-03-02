@@ -1,77 +1,84 @@
-# Source Code Imitator
+# On Challenges in Anonymizing Source Code
 
-This repository belongs to our publication:
+This is the repository for the submission "I still know it's you! On
+Challenges in Anonymizing Source Code". This document contains
+instructions on how to generate the datasets and results present in
+the submission.
 
----
+## Requirements
 
-Erwin Quiring, Alwin Maier, and Konrad Rieck. Misleading Authorship Attribution of Source Code using Adversarial Learning. *Proc. of USENIX Security Symposium*, 2019.
+Our implementation builds on the code transformation framework
+[Code Imitator](https://github.com/EQuiw/code-imitator). We have
+modified and extended the framework, so that the different protection
+techniques can be applied and evaluated in a unified manner. This
+repository contains the resulting modified framework.
 
----
+To setup the framework, we refer the reader to the
+[build instructions](src/README.md) provided in the Github
+repository. Additionally, in `src/LibToolingAST` the new files
+[hooks.cpp](src/LibToolingAST/hooks.cpp) and
+[libnocstd.c](src/LibToolingAST/libnocstd.c) have to be compiled.  The
+corresponding compiler calls are at the top of these files.
 
-You can find the code and datasets from our paper in this repository, and a copy of our paper
-[here](https://arxiv.org/abs/1905.12386).
+Finally the obfuscators [Stunnix](http://stunnix.com/prod/cxxo/) and
+[Tigress](https://tigress.wtf/download.html) need to be downloaded and
+installed. We developed fixes to compensate limitations of the
+evaluation version of Stunnix. These are discussed below.
 
-## Background
-We present a novel attack against authorship
-attribution of source code.
-We exploit that recent attribution methods rest on machine learning and
-thus can be deceived by adversarial examples of source code.
-Our attack performs a series of semantics-preserving
-code transformations that mislead learning-based attribution but appear
-plausible to a developer.
-The attack is guided by Monte-Carlo tree search that enables us to
-operate in the discrete domain of source code.
+## Creating Datasets
 
-As an example, the figure below shows two
-transformations performed by our attack on a code snippet from the
-Google Code Jam competition. The first transformation changes the for-loop
-to a while-loop, while the second replaces the C++ operator `<<`
-with the C-style function `printf`. Note that the format string
-is automatically inferred from the variable type.  Both
-transformations change the stylistic patterns of author A and, in
-combination, mislead the attribution to author B.
+Next, we describe briefly how to generate the datasets we used in our
+analysis. All files can afterwards be controlled for
+output-equivalence by running
+[test-obfuscated_c.py](data/test-obfuscated_c.py)
 
-<p align="center">
-<img src="./intro-imitator.jpg" width="458" height="175" alt="Example of our attack" />
-</p>
+### Stunnix
 
-In summary, we make the following contributions:
-- *Adversarial learning on source code.* We create adversarial examples
-of source code. We consider targeted as well as untargeted attacks of the attribution method.
+First follow the instructions by Stunnix to obfuscate files.
+Afterwards run
+[Stunnix_postprocessing.sh](data/stunnix_postprocessing.sh) with the
+output directory as argument.
 
--  *Problem-Feature Space Dilemma.*
-In contrast to adversarial examples in the popular image domain, we
-work in a discrete space where a bijective mapping between the problem space
-(source code) and the feature space does not exist.  
-Our attack thus illustrates how adversarial learning can be conducted when the problem and feature space are disconnected.
+### Tigress
 
-- *Monte-Carlo tree search.* To this end, we introduce Monte-Carlo tree search as a novel approach to guide the creation of adversarial examples, such that feasibility constraints in the domain of source code are satisfied.
+First the dataset must be prepared to run tigress. Therefore call
+[prepare_tigress.sh](data/tigress_tools/prepare_tigress.sh) (or the
+`_advanced` option for our improvements) on every file.  Afterwards
+run [obfuscate_tigress.sh](data/tigress_tools/obfuscate_tigress.sh) on
+every prepared file. There are three options:
 
-- *Black-box attack strategy.* The devised attack does not require internal knowledge of the attribution method, so that it is applicable to any learning algorithm and suitable for evading a wide range of attribution methods.
+1. `--random` will activate a random seed. Without this option the
+   seed is fixed.
+2. `--rename` to obfuscate the files "inplace". Otherwise a new file
+   `..obf.c` will be created.
+3. `--advanced` to activate our improvements.
 
-- *Large-scale evaluation.* We empirically evaluate our attack on a dataset of 204 programmers against two recent attribution methods.
+### Normalization
 
-## Dataset and Implementation
-
-You can find the data set and our implementation in the respective
-`data` and `src` directory. Any further directory has its own README file.
-
-This repository allows you to perform
-1. *code authorship attribution*. We have a simple API to load features, test
-things and apply learning algorithms. You can easily add new features if
-you are looking for novel ways to identify authors. The code is properly
-separated from all evasion stuff.
-
-2. *evasion attacks*. You can also use our code transformers to evaluate the
-robustness of current attribution methods against attacks.
-
-If you are using our implementation, please cite our USENIX paper.
-You may use the following BibTex entry:
+For this purpose, run
+[execute_transformers.py](src/PyProject/anonymize/execute_transformers.py)
+with 
+```bash
+python anonymize/execute_transformers.py generate -t \
+   numbering, types, comma, braces, multidecl, voidreturn, paren, ifelse, \
+   switch, compoundassign, main, unnecessaryreturn, flattenif
 ```
-@INPROCEEDINGS{QuiMaiRie19,
-  author = {Erwin Quiring and Alwin Maier and Konrad Rieck},
-  title = {Misleading Authorship Attribution of Source Code using Adversarial Learning},
-  booktitle = {Proc. of USENIX Security Symposium},
-  year = {2019},
-}
-```   
+
+### Imitation
+
+For this purpose, please refer to the READMEs of Imitator.
+
+## Train models
+
+See original documentation for code-imitator. We added
+[feature_extraction_single_c.sh](data/extractfeatures_single_c.sh) to
+extract features from C files.
+
+## Classifications
+
+One single file can be classified using
+[classify.py](src/PyProject/anonymize/utils/classify.py).  To classify
+whole datasets (on multiple models),
+[this script](src/PyProject/anonymize/obfuscator_classify_dump.py)
+will do all classifications for datasets and models specified in
+[a copy of this file (named obfus_config.yaml)](src/PyProject/anonymize/obfus_config_example.yaml).

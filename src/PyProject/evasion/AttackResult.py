@@ -23,6 +23,9 @@ class AttackResult:
         self.initial_feature_vec: np.ndarray = None
         self.final_feature_vec: np.ndarray = None
 
+        self.initial_distance: float = None
+        self.final_distance: float = None
+
         self.linesofcode_before: int = None
         # self.changedlinesofcode_plus: typing.List[str] = None
         # self.changedlinesofcode_minus: typing.List[str] = None

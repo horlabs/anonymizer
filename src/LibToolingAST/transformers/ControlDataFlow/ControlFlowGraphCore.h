@@ -62,6 +62,7 @@ using namespace clang::driver;
 #include <exception>
 
 #include "../utils_transform.h"
+#include "../include/SourceTextHelper.h"
 #include "../../Utilities/Utils.h"
 
 #ifndef BOOST_GRAPH_INCL
@@ -72,6 +73,8 @@ using namespace clang::driver;
 //#include <boost/graph/graph_utility.hpp>
 #include <boost/graph/filtered_graph.hpp>
 #include <boost/function.hpp>
+#include <boost/algorithm/string/replace.hpp>
+
 #endif
 
 // Load our custom typedef's and structs ...
@@ -113,7 +116,7 @@ public:
      * @param f
      * @return true if no errors
      */
-    bool addFunctionDecl(const FunctionDecl *f);
+    bool addFunctionDecl(const FunctionDecl *f, bool onlyDeclaration = false);
 
     /**
      * Does some sanity check to ensure that we have a valid CFG graph.

@@ -44,12 +44,12 @@ void ReplaceLiteralMatchHandler::run(const MatchFinder::MatchResult &Result) {
               << "int ret_val = " << ReturnText.str() << "; ";
       for (const auto S : CS->body()) {
         if (S == RS) {
-          sstream << "return ret_val;"
-                  << " }";
+          sstream << "return ret_val;";
         } else {
           sstream << getSourceText(S, SM, LO).str();
         }
       }
+      sstream << " }";
       Replacement Replace(SM, getCharSourceRange(CS, SM, LO), sstream.str(),
                           LO);
       Replaces.push_back(Replace);

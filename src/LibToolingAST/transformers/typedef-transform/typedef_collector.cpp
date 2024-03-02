@@ -51,8 +51,27 @@ public:
         if (sm.isWrittenInMainFile(srcloc)) {
             // Check if td is in main file
 
-            this->typedefdeclarations.push_back(td);
+            // for now, ignore typedefs with function pointers (the handling is much
+            // more complex since you need to rewrite the type with knowing of the
+            // variable name
+            if (td->getTypeSourceInfo()->getType()->isFunctionPointerType())
+                return true;
 
+            // ignoring typedefs in which a struct is defined
+            auto type = td->getUnderlyingType().getTypePtr();
+            while (type->isArrayType() || type->isPointerType())
+                type = type->getPointeeOrArrayElementType();
+            if (auto elaType = dyn_cast<ElaboratedType>(type)) {
+                if (isa<EnumType>(elaType->getNamedType().getTypePtr()))
+                    return true;
+                auto recDecl = elaType->getAsStructureType()->getDecl();
+                if (recDecl && sm.isBeforeInTranslationUnit(td->getLocStart(), recDecl->getLocStart()) &&
+                    sm.isBeforeInTranslationUnit(recDecl->getLocEnd(), td->getLocEnd())) {
+                    this->recordtypedefs.push_back(td);
+                    return true;
+                }
+            }
+            this->typedefdeclarations.push_back(td);
 #ifdef MYDEBUG
             llvm::outs() << "Typedef name:\t" << td->getQualifiedNameAsString() << "\n";
             llvm::outs() << "Typedef inner type:\t" << td->getUnderlyingType().getAsString() << "\n";
@@ -83,6 +102,18 @@ public:
     bool VisitTypedefNameDecl(TypedefNameDecl *tnd){
         auto srcloc = tnd->getLocStart();
         if (sm.isWrittenInMainFile(srcloc)) {
+            auto type = tnd->getUnderlyingType().getTypePtr();
+            while (type->isArrayType() || type->isPointerType())
+                type = type->getPointeeOrArrayElementType();
+            if (auto elaType = dyn_cast<ElaboratedType>(type)) {
+                if (isa<EnumType>(elaType->getNamedType().getTypePtr()))
+                    return true;
+                auto recDecl = elaType->getAsStructureType()->getDecl();
+                if (recDecl && sm.isBeforeInTranslationUnit(tnd->getLocStart(), recDecl->getLocStart()) &&
+                    sm.isBeforeInTranslationUnit(recDecl->getLocEnd(), tnd->getLocEnd())) {
+                    return true;
+                }
+            }
             this->typedefnamedeclarations.push_back(tnd);
         }
         return true;
@@ -218,6 +249,7 @@ protected:
 
     TypedefDecl *typedefdecltorewrite = nullptr;
     std::vector<TypedefDecl*> typedefdeclarations;
+    std::vector<TypedefDecl*> recordtypedefs;
     std::vector<TypeAliasDecl*> typealiasdeclarations;
     std::vector<TypedefNameDecl*> typedefnamedeclarations;
 
@@ -359,8 +391,13 @@ protected:
         std::istringstream iss(curtypetoinsert);
         std::vector<std::string> tokens{std::istream_iterator<std::string>{iss},
                                         std::istream_iterator<std::string>{}};
+        unsigned long tmp = x;
         for(const auto &cs : tokens){
-            typedefname += cs.substr(0, x);
+            while (tmp > cs.size()) {
+                typedefname += cs;
+                tmp -= cs.size();
+            }
+            typedefname += cs.substr(0, tmp);
         }
 
         // B. Replace special characters like & or *
@@ -482,11 +519,17 @@ protected:
 
         } else if(!this->typedefdeclarations.empty()){
             TypedefDecl *tdd = this->typedefdeclarations.front();
-            OurRewriter.InsertTextAfter(tdd->getLocStart(), completetypedef);
-
-        } else if(this->first_decl){
-            OurRewriter.InsertTextBefore(this->first_decl->getLocStart(), completetypedef);
-
+            auto offs = getOffsetWithSemicolon(Context, tdd);
+            SourceLocation End(Lexer::getLocForEndOfToken(tdd->getLocEnd(), 0, sm, Context.getLangOpts()));
+            OurRewriter.InsertTextAfter(End.getLocWithOffset(offs + 1), completetypedef);
+        } else if (!this->recordtypedefs.empty()) {
+            TypedefDecl *tdd = this->recordtypedefs.back();
+            auto offs = getOffsetWithSemicolon(Context, tdd);
+            SourceLocation End(Lexer::getLocForEndOfToken(tdd->getLocEnd(), 0, sm, Context.getLangOpts()));
+            OurRewriter.InsertTextAfter(End.getLocWithOffset(offs + 1), completetypedef);
+        } else if (this->first_decl) {
+            auto startLoc = this->first_decl->getLocStart();
+            OurRewriter.InsertTextBefore(startLoc, completetypedef);
         } else {
             llvm::errs() << "Error: Could not find a position for new typedef\n";
             return false;
@@ -544,10 +587,14 @@ protected:
 
 
     bool replaceAllNecessaryTypesWithNewTypedef(std::string &typetoinsert, std::string &newtypedefname){
+        std::vector<SourceLocation> processed{};
 
         for(TypeLoc tl : this->typelocsfortypedef){
             if( tl.getType().getUnqualifiedType().getAsString() == typetoinsert ){
-
+                if (std::find(processed.begin(), processed.end(), tl.getBeginLoc()) != processed.end()) {
+                    continue;
+                }
+                processed.emplace_back(tl.getBeginLoc());
 #ifdef MYDEBUG
                 llvm::outs() << "Replaced:" << tl.getType().getUnqualifiedType().getAsString()
                              << ";" << isa<ParenType>(tl.getType())

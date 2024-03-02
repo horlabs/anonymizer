@@ -142,7 +142,7 @@ public:
                 }
             }
         }
-            return true;
+        return true;
     }
 
     /**
@@ -202,15 +202,53 @@ public:
                     if (vardecl->getTypeSourceInfo()->getType().getAsString() == "int"){
                         this->declstmtswithinttype.push_back(ds);
                     }
-//                    llvm::errs() << vardecl->getName() << "T:" << vardecl->getTypeSourceInfo()->getType().getAsString() << "\t";
-//                    llvm::errs() << "Ty:" << vardecl->getType().getCanonicalType().getAsString() << "\n";
-//                    llvm::errs() << "tl:" << vardecl->getTypeSourceInfo()->getTypeLoc().getTypePtr()
-//                            ->getCanonicalTypeInternal().getAsString() << "\n";
                 }
                 break; // We are only interested in the first Decl from a row.
             }
         }
 
+        return true;
+    }
+
+    /**
+     *  Ignore all floats used in scanf for casting to double
+     *  (we will get 0.0 in that case)
+     *  Also ignore all floats used in printf since the values could be different by casting them.
+     *  This will not prevent all differences since we are calculating now with a greater precision
+     *  which will lead sometimes to slightly different results.
+     *  The better way would be to also adjust the format string in scanf (and derivates)...
+     */
+    bool VisitCallExpr(CallExpr *expr) {
+        if (sm.isWrittenInMainFile(expr->getLocStart())) {
+            auto funcName = expr->getDirectCallee()->getName();
+            if (funcName.find("scanf") != std::string::npos || funcName.find("printf") != std::string::npos) {
+                for (auto arg : expr->arguments()) {
+                    while (!isa<DeclRefExpr>(arg)) {
+                        if (isa<UnaryOperator>(arg)) {
+                            arg = cast<UnaryOperator>(arg)->getSubExpr();
+                        } else if (isa<ImplicitCastExpr>(arg)) {
+                            arg = cast<ImplicitCastExpr>(arg)->getSubExpr();
+                        } else {
+                            break;
+                        }
+                    }
+                    if (auto declref = dyn_cast<DeclRefExpr>(arg)) {
+                        if (auto vardecl = dyn_cast<VarDecl>(declref->getDecl())) {
+                            if (vardecl->getTypeSourceInfo()->getType().getAsString() == "float") {
+                                auto parent = Context.getParents(*vardecl)[0];
+                                while (parent.get<DeclStmt>() == nullptr) parent = Context.getParents(parent)[0];
+                                auto ds = parent.get<DeclStmt>();
+                                auto it = std::find(this->declstmtswithfloattype.begin(),
+                                                    this->declstmtswithfloattype.end(), ds);
+                                if (it != this->declstmtswithfloattype.end()) {
+                                    this->declstmtswithfloattype.erase(it);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return true;
     }
 
@@ -278,6 +316,8 @@ public:
                     if(transformXtoY(s, "long"))
                         return;
                 }
+                break;
+            case tuple_pair:
                 break;
         }
 

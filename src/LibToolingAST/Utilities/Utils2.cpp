@@ -36,15 +36,54 @@ void resolve_inner_types(QualType ctype, std::vector<QualType> &includes){
     if(auto tvt = dyn_cast<TemplateSpecializationType>(ctype)) {
         // Is a TemplateSpecializationType such as priority_queue<S> where S may be a class or struct.
 
-        for(unsigned i = 0; i < tvt->getNumArgs(); i++){
-            auto argtype = tvt->getArg(i).getAsType();
+        for (unsigned i = 0; i < tvt->getNumArgs(); i++) {
+            auto &arg = tvt->getArg(i);
 
-            // todo following if-check is necessary for cases with:
-            //       auto groups = array<Group, 3>{{{R, 'R'}, {Y, 'Y'}, {B, 'B'}}};
-            if(argtype.getAsString().empty()){
-                llvm::errs() << "Warning: argtype in resolve inner types is empty string\n";
-            } else{
-                resolve_inner_types(argtype, includes);
+            if (arg.getKind() == TemplateArgument::Expression) {
+                auto argexpr = arg.getAsExpr();
+                while (isa<CastExpr>(argexpr)) {
+                    argexpr = cast<CastExpr>(argexpr)->IgnoreCasts();
+                }
+                auto argtype = argexpr->getType();
+                // for some reason, in a few cases getAsString will return nothing we
+                // can work with and methods like .empty() result in a segfault. So we
+                // implement some code of it here to make sure we have a valid
+                // string-object we can use afterwards
+                std::string buffer;
+                LangOptions options;
+                QualType::getAsStringInternal(argtype.getTypePtr(),
+                                            argtype.getQualifiers(), buffer,
+                                            PrintingPolicy(options));
+
+                // todo following if-check is necessary for cases with:
+                //       auto groups = array<Group, 3>{{{R, 'R'}, {Y, 'Y'}, {B, 'B'}}};
+
+                if (buffer.empty()) {
+                    llvm::errs() << "Warning: argtype in resolve inner types is empty string\n";
+                } else {
+                    resolve_inner_types(argtype, includes);
+                }
+            }
+            if (arg.getKind() == TemplateArgument::Type) {
+                auto argtype = arg.getAsType();
+
+                // for some reason, in a few cases getAsString will return nothing we
+                // can work with and methods like .empty() result in a segfault. So we
+                // implement some code of it here to make sure we have a valid
+                // string-object we can use afterwards
+                std::string buffer;
+                LangOptions options;
+                QualType::getAsStringInternal(argtype.getTypePtr(),
+                                            argtype.getQualifiers(), buffer,
+                                            PrintingPolicy(options));
+
+                // todo following if-check is necessary for cases with:
+                //       auto groups = array<Group, 3>{{{R, 'R'}, {Y, 'Y'}, {B, 'B'}}};
+                if(buffer.empty()){
+                    llvm::errs() << "Warning: argtype in resolve inner types is empty string\n";
+                } else{
+                    resolve_inner_types(argtype, includes);
+                }
             }
         }
 

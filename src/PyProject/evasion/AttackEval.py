@@ -18,6 +18,7 @@ class AttackEvalAbstract(ABC):
                  no_authors: typing.Optional[int],
                  selected_authors: typing.Optional[typing.List[str]],
                  seed: int = 31,
+                 check_author: bool = True,
                  verbose: bool = False,
                  ) -> None:
         """
@@ -54,7 +55,8 @@ class AttackEvalAbstract(ABC):
         for i in range(len(authors_to_choose)):
             try:
                 sourceauthor = Author(author=authors_to_choose[i], learnsetup=self.testlearnsetup)
-                sourceauthor.check_is_correct(learnsetup=self.testlearnsetup, verbose=verbose)
+                if check_author:
+                    sourceauthor.check_is_correct(learnsetup=self.testlearnsetup, verbose=verbose)
 
                 self.possible_authors[sourceauthor.author] = sourceauthor
                 if len(self.possible_authors) == no_authors:
@@ -102,12 +104,11 @@ class AttackEvalImpersonation(AttackEvalAbstract):
                  no_authors: typing.Optional[int],
                  selected_authors: typing.Optional[typing.List[str]],
                  seed: int = 31,
+                 check_author: bool = True,
                  verbose: bool = False,
                  ) -> None:
         super(AttackEvalImpersonation, self).__init__(testlearnsetup, attack_dir, no_authors, selected_authors,
-                                                     seed,
-                                                     verbose)
-
+                                                      seed, check_author, verbose)
 
     def getNextAuthorPair(self, fix_src: typing.Optional[str] = None, fix_tar: typing.Optional[str] = None,
                           fix_pair: typing.Optional[typing.List[typing.Tuple[str, str]]] = None):
@@ -153,12 +154,11 @@ class AttackEvalFixedDodging(AttackEvalAbstract):
                  no_authors: typing.Optional[int],
                  selected_authors: typing.Optional[typing.List[str]],
                  seed: int = 31,
+                 check_author: bool = True,
                  verbose: bool = False,
                  ) -> None:
         super(AttackEvalFixedDodging, self).__init__(testlearnsetup, attack_dir, no_authors, selected_authors,
-                                                     seed,
-                                                     verbose)
-
+                                                     seed, check_author, verbose)
 
     def getNextAuthorPair(self, fix_src: typing.Optional[str] = None, fix_tar: typing.Optional[str] = None,
                           fix_pair: typing.Optional[typing.List[typing.Tuple[str, str]]] = None):

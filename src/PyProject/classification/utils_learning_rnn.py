@@ -1,12 +1,10 @@
-from keras.models import Sequential, load_model
-from keras.layers import Dense, Activation, Embedding, Dropout, TimeDistributed
+from keras.models import Sequential
+from keras.layers import Dense, Activation
 from keras.layers import LSTM
-from keras.optimizers import Adam, RMSprop
-from keras.utils import to_categorical
+from keras.optimizers import RMSprop
 from sklearn import preprocessing
 from keras.utils.np_utils import to_categorical
 from keras.wrappers.scikit_learn import KerasClassifier
-from sklearn.utils import shuffle
 import keras.optimizers
 from sklearn.model_selection import ParameterGrid
 from keras import regularizers

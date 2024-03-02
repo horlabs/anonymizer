@@ -8,6 +8,10 @@ from evasion.Author import Author
 import copy
 from evasion.Transformers.BasicTransformer import BasicTransformer
 import subprocess
+from pathlib import Path
+import re
+import shutil
+import tempfile
 
 
 class AddTemplateTransformer(BasicTransformer):
@@ -166,12 +170,34 @@ class AddTemplateTransformer(BasicTransformer):
 
         # Collect all includes
         for srcfile in srcfiles:
+            with tempfile.TemporaryDirectory() as tmp_path:
+                if Config.multifilesetup:
+                    author = (Path(directory) / srcfile).parent.name
+                    project = "/".join((Path(directory) / srcfile).name.split("_")[:1])
+                    project = project.replace("-US-", "_").replace("-SL-", "/")
+                    subpath = "/".join((Path(directory) / srcfile).name.split("_")[1:2])
+                    subpath = subpath.replace("-US-", "_").replace("-SL-", "/") + Path(srcfile).suffix
+                    orig_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered/") / author / project
+                    macros_path = Path("/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/") / author / project
+                    tmp_dir = Path(tmp_path) / author / project
+                    shutil.copytree(orig_path, tmp_dir)
+                    os.system(f"cp -r {macros_path} {tmp_dir.parent}")
+                    link = tmp_dir / subpath
+                    link.unlink()
+                    link.symlink_to(Path(directory) / srcfile)
+
+                cmdd_transform = [self.includeinfopath, link if Config.multifilesetup else os.path.join(directory, srcfile), *cmdargs, "--",
+                                *(Config.flag_list_cpp if srcfile.endswith(".cpp") else Config.flag_list_c)]
+                
+                with open(os.path.join(directory, srcfile), encoding="iso-8859-1") as f:
+                    if re.search("typedef [^;]* bool;", f.read()) is not None:
+                        cmdd_transform.append("-DBOOLTYPE")
+
+                p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=145, cwd=link.parent if Config.multifilesetup else None)
+                output, err = p.stdout, p.stderr
+
+
             curincls = []
-
-            cmdd_transform = [self.includeinfopath, os.path.join(directory, srcfile), *cmdargs, "--", *Config.flag_list]
-
-            p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=145)
-            output, err = p.stdout, p.stderr
 
             if err == b'':
                 # parse output, split at each newline and check that not simply empty string..

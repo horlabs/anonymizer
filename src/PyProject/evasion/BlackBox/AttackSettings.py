@@ -112,9 +112,115 @@ class SimAnnealingSettings(AttackSettings):
         early_stop = int(config["SIMANNEALING"]["early_stop"])
 
         return SimAnnealingSettings(
-            max_iterations = max_iterations,
-            early_stop = early_stop,
+            max_iterations=max_iterations,
+            early_stop=early_stop,
             sim_annealing=simulated_annealing,
-            sim_annealing_params=(simulated_annealing_k, simulated_annealing_ateachiteration, simulated_annealing_decay),
+            sim_annealing_params=(
+                simulated_annealing_k, simulated_annealing_ateachiteration, simulated_annealing_decay),
             attack_mode=attack_mode
+        )
+
+
+class HilllClimbingAnonymizeSettings(AttackSettings):
+
+    def __init__(self, max_iterations, early_stop, anonymity_set_size, max_distance, sim_annealing,
+                 sim_annealing_params, attack_mode):
+        super(HilllClimbingAnonymizeSettings, self).__init__(EvasionAlgorithm.HillClimbing_anonym)
+
+        self.max_iterations = max_iterations
+        self.early_stop = early_stop
+        self.anonymity_set_size = anonymity_set_size
+        self.max_distance = max_distance
+        self.simulated_annealing = sim_annealing
+        self.simulated_annealing_params = sim_annealing_params
+        self.attack_mode = attack_mode
+
+    @staticmethod
+    def load_settings_from_file(path: str, attack_mode: AttackMode) -> 'HilllClimbingAnonymizeSettings':
+        config = configparser.ConfigParser()
+        config.read(path)
+
+        max_iterations = int(config["HC_anonymize"]["max_iterations"])
+        simulated_annealing = bool(config["HC_anonymize"]["simulated_annealing"])
+        simulated_annealing_k = int(config["HC_anonymize"]["simulated_annealing_k"])
+        simulated_annealing_ateachiteration = int(config["HC_anonymize"]["simulated_annealing_ateachiteration"])
+        simulated_annealing_decay = float(config["HC_anonymize"]["simulated_annealing_decay"])
+        early_stop = int(config["HC_anonymize"]["early_stop"])
+        anonymity_set_size = int(config["HC_anonymize"]["anonymity_set_size"])
+        max_distance = int(config["HC_anonymize"]["max_distance"])
+
+        return HilllClimbingAnonymizeSettings(
+            max_iterations=max_iterations,
+            early_stop=early_stop,
+            anonymity_set_size=anonymity_set_size,
+            max_distance=max_distance,
+            sim_annealing=simulated_annealing,
+            sim_annealing_params=(
+                simulated_annealing_k, simulated_annealing_ateachiteration, simulated_annealing_decay),
+            attack_mode=attack_mode
+        )
+
+
+class MCTSAnonymSettings(MCTSClassicSettings):
+
+    def __init__(self, max_outer_iterations: int,
+                 max_inner_iterations: int,
+                 number_of_sequences_in_random_playout_0: int,
+                 number_of_sequences_in_random_playout_further: int,
+                 path_length_in_random_playout: int,
+                 repeat_template_transformers: int,
+                 attack_mode: AttackMode,
+                 anonymity_set_size,
+                 max_distance,
+                 early_stop: typing.Optional[int]):
+        """
+        Set up the MCTS Settings...
+        :param max_outer_iterations:
+        :param max_inner_iterations:
+        :param number_of_sequences_in_random_playout_0:
+        :param number_of_sequences_in_random_playout_further:
+        :param path_length_in_random_playout:
+        :param repeat_template_transformers:
+        :param attack_mode:
+        :param early_stop:
+        """
+        super(MCTSAnonymSettings, self).__init__(max_outer_iterations=max_outer_iterations,
+                                                 max_inner_iterations=max_inner_iterations,
+                                                 number_of_sequences_in_random_playout_0=number_of_sequences_in_random_playout_0,
+                                                 number_of_sequences_in_random_playout_further=number_of_sequences_in_random_playout_further,
+                                                 path_length_in_random_playout=path_length_in_random_playout,
+                                                 repeat_template_transformers=repeat_template_transformers,
+                                                 attack_mode=attack_mode,
+                                                 early_stop=early_stop)
+
+        self.anonymity_set_size = anonymity_set_size
+        self.max_distance = max_distance
+
+    @staticmethod
+    def load_settings_from_file(path: str, attack_mode: AttackMode) -> 'MCTSAnonymSettings':
+        config = configparser.ConfigParser()
+        config.read(path)
+
+        max_outer_iterations = int(config["AMCTS_A"]["max_outer_iterations"])
+        max_inner_iterations = int(config["AMCTS_A"]["max_inner_iterations"])
+        no_seq_random_playout_0 = int(config["AMCTS_A"]["number_of_sequences_in_random_playout_0"])
+        no_seq_random_playout_f = int(config["AMCTS_A"]["number_of_sequences_in_random_playout_further"])
+        path_length_in_random_playout = int(config["AMCTS_A"]["path_length_in_random_playout"])
+        early_stop = int(config["AMCTS_A"]["early_stop"])
+        anonymity_set_size = int(config["AMCTS_A"]["anonymity_set_size"])
+        max_distance = int(config["AMCTS_A"]["max_distance"])
+
+        repeat_template_transformers = int(config["AMCTS_A"]["repeat_template_transformers"])
+
+        return MCTSAnonymSettings(
+            max_outer_iterations=max_outer_iterations,
+            max_inner_iterations=max_inner_iterations,
+            number_of_sequences_in_random_playout_0=no_seq_random_playout_0,
+            number_of_sequences_in_random_playout_further=no_seq_random_playout_f,
+            path_length_in_random_playout=path_length_in_random_playout,
+            repeat_template_transformers=repeat_template_transformers,
+            attack_mode=attack_mode,
+            max_distance=max_distance,
+            anonymity_set_size=anonymity_set_size,
+            early_stop=early_stop
         )

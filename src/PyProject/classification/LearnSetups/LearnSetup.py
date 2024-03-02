@@ -24,5 +24,9 @@ class LearnSetup(ABC):
         pass
 
     @abstractmethod
+    def predict_probas(self, feature_vec: np.ndarray):
+        pass
+
+    @abstractmethod
     def predict(self, feature_vec: np.ndarray):
         pass

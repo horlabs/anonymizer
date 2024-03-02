@@ -147,7 +147,8 @@ class IncludeSortTransformer(BasicTransformer):
         for srcfile in srcfiles:
             curincls = []
 
-            cmdd_transform = [self.includeinfopath, os.path.join(directory, srcfile), *cmdargs, "--", *Config.flag_list]
+            cmdd_transform = [self.includeinfopath, os.path.join(directory, srcfile), *cmdargs, "--",
+                              *(Config.flag_list_cpp if srcfile.endswith(".cpp") else Config.flag_list_c)]
 
             p = subprocess.run(cmdd_transform, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=145)
             output, err = p.stdout, p.stderr

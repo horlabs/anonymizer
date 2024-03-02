@@ -28,6 +28,14 @@ class LearnSetupRLF(LearnSetup):
         scoreprednew = self.clf.predict_proba(feature_vec[0, :])[0][target_class]
         return scoreprednew
 
+    # @Overwrite
+    def predict_probas(self, feature_vec: np.ndarray):
+        assert feature_vec.shape[0] == 1
+        # assert feature_vec.shape[1] >= self.max_sel_feat_indices
+        assert feature_vec.shape[1] == self.data_final_train.getfeaturematrix().shape[1]
+
+        scoreprednew = self.clf.predict_proba(feature_vec[0, :])[0]
+        return scoreprednew
 
     # @Overwrite
     def predict(self, feature_vec: np.ndarray):

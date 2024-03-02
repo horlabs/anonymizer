@@ -31,7 +31,7 @@ class StyloLexemFeatureGenerator:
 
         self.styloobject: StyloASTNodeFeature = StyloASTNodeFeature(inputdata=inputdata, verbose=verbose,
                                                                     trainobject=trainobject,
-                                                                    featureclassidentifier="unigram", tf=tf, idf=idf,
+                                                                    featureclassidentifier="lexems_features", tf=tf, idf=idf,
                                                                     bigrams=False)
 
         self.lasttrainobj = trainobject
@@ -46,7 +46,7 @@ class StyloLexemFeatureGenerator:
         :return: true/false
         """
 
-        keys = ["unigram"]
+        keys = ["lexems_features"]
         if isinstance(trainobj, StyloClangFeaturesAbstract):
             for key in keys:
                 if trainobj.getunique_key().startswith(key):

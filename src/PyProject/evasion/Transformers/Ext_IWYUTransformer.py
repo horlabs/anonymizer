@@ -11,7 +11,6 @@ class ExternalIncludeWhatYouUseTransformer(TransformerBase):
 
     def __init__(self, transformer: str, option: str, uniqueid: str, fillcmdlineoption: str):
         super(ExternalIncludeWhatYouUseTransformer, self).__init__(transformer, option, uniqueid, fillcmdlineoption)
-        self.flags = Config.flag_list
 
         # Path to iwyu-executable
         # Each external transformer is just an option, so it may not be present.
@@ -45,7 +44,8 @@ class ExternalIncludeWhatYouUseTransformer(TransformerBase):
         bash_file = os.path.join(os.path.dirname(Config.externaltransformercsvfile), "iwyu_replace.sh")
         assert os.path.isfile(bash_file)
 
-        cmdd_transform = ["bash", bash_file, source_file, self.iwyupath, *self.option, *self.flags]
+        cmdd_transform = ["bash", bash_file, source_file, self.iwyupath, *self.option,
+                          *(Config.flag_list_cpp if source_file.endswith(".cpp") else Config.flag_list_c)]
 
         simplified_cmdd_transform = " ".join([self.transformer, source_file, *self.option, "..."])
 

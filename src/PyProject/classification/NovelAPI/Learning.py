@@ -2,7 +2,7 @@ from sklearn import svm
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import preprocessing
 import sklearn.feature_selection
-from sklearn.model_selection import ParameterGrid
+from sklearn.model_selection import ParameterGrid, StratifiedKFold
 from sklearn.base import clone
 import numpy as np
 from classification import StratifiedKFoldProblemId
@@ -60,9 +60,10 @@ class Learning:
         skflocal = StratifiedKFoldProblemId.StratifiedKFoldProblemId(iids=train_obj.getiids(), n_splits=3,
                                                                      shuffle=True, random_state=411,
                                                                      nocodesperprogrammer=trainproblemlength)
+        #skflocal = StratifiedKFold(n_splits=3, shuffle=True, random_state=411)
 
         listoftraintestsplits = []
-        for train_index, test_index in skflocal.split(None, None):
+        for train_index, test_index in skflocal.split(None, None):#train_obj.getiids(), train_obj.getlabels()):
             trainfiles: StyloFeatures = train_obj[train_index]
             testfiles: StyloFeatures = train_obj[test_index]
 
@@ -202,7 +203,7 @@ class Learning:
                                                                                                   listoftraintestsplits=listoftraintestsplits,
                                                                                                   config_learning=config_learning,
                                                                                                   num_classes=len(
-                                                                                                      test_obj.getiids())
+                                                                                                      set(y_test))
                                                                                                   )
 
             testlearnsetup = LearnSetupRNNRF(data_final_train=train_obj, data_final_test=test_obj,
@@ -263,13 +264,14 @@ class Learning:
         else:
             param_grid = config_learning.hyperparameters
 
+        random_state = 31
         best_params, best_params_acc = self.customized_grid_search(param_grid=param_grid,
-                                                              clf=RandomForestClassifier(random_state=31,
+                                                              clf=RandomForestClassifier(random_state=random_state,
                                                                                          n_jobs=config_learning.noofparallelthreads),
                                                               listoftraintestsplits=listoftraintestsplits)
 
         # now train on final object
-        rlf_best = RandomForestClassifier(random_state=31, n_jobs=config_learning.noofparallelthreads)
+        rlf_best = RandomForestClassifier(random_state=random_state, n_jobs=config_learning.noofparallelthreads)
         rlf_best.set_params(**best_params)
         rlf_best.fit(x_train, y_train)
         ypred = rlf_best.predict(x_test)

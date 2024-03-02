@@ -23,6 +23,7 @@
 using namespace clang;
 using namespace clang::ast_matchers;
 using namespace llvm::cl;
+using namespace clang::ast_type_traits;
 
 enum Strategy {move_in_decls=1, move_out_decls=2};
 
@@ -107,6 +108,28 @@ public:
 private:
 
     void rewrite(ASTContext *Context, const Stmt* Outer, const VarDecl* Inner) {
+        bool insertComp = false;
+        auto parent = Context->getParents(*Outer)[0];
+        if ((parent.get<ForStmt>() || parent.get<WhileStmt>()) && !isa<CompoundStmt>(Outer))
+            insertComp = true;
+        bool searchForSemicolon = true;
+        if (isa<ForStmt>(Outer)) {
+            searchForSemicolon = !isa<CompoundStmt>(cast<ForStmt>(Outer)->getBody());
+            if (auto ifStmt = dyn_cast<IfStmt>(cast<ForStmt>(Outer)->getBody())) {
+                searchForSemicolon =
+                    ifStmt->getElse() == nullptr
+                        ? !isa<CompoundStmt>(ifStmt->getThen())
+                        : !isa<CompoundStmt>(ifStmt->getElse());
+            }
+        } else if (isa<WhileStmt>(Outer)) {
+            searchForSemicolon = !isa<CompoundStmt>(cast<WhileStmt>(Outer)->getBody());
+            if (auto ifStmt = dyn_cast<IfStmt>(cast<WhileStmt>(Outer)->getBody())) {
+                searchForSemicolon =
+                    ifStmt->getElse() == nullptr
+                        ? !isa<CompoundStmt>(ifStmt->getThen())
+                        : !isa<CompoundStmt>(ifStmt->getElse());
+            }
+        }
 
         // TODO, we need to check if upper level has a CompoundStmt, or if we need to introduce a new scope.
 
@@ -131,8 +154,16 @@ private:
         auto newouterdecl = getSourceTextStable(*Context, Inner->getLocStart(), Inner->getLocation());
         if (brace_case)
             newouterdecl = ReplaceString(newouterdecl, "(" + Inner->getNameAsString(), " " + Inner->getNameAsString());
+        if (insertComp)
+            newouterdecl = "{" + newouterdecl;
         OurRewriter.InsertTextBefore(Outer->getLocStart(), newouterdecl + ";");
-
+        if (insertComp) {
+            auto range = searchForSemicolon
+                             ? getSourceRangeWithSemicolon(*Context, Outer)
+                             : Outer->getLocEnd();
+            OurRewriter.InsertTextAfter(range.getEnd().getLocWithOffset(1),
+                                        "}");
+        }
     }
 
     Rewriter &OurRewriter;
@@ -220,6 +251,84 @@ public:
 
 private:
 
+    bool isScopeTop(const Stmt *stmt) {
+        if (isa<CompoundStmt>(stmt))
+            return true;
+        if (isa<ForStmt>(stmt))
+            return true;
+        if (isa<DoStmt>(stmt))
+            return true;
+        if (isa<IfStmt>(stmt))
+            return true;
+        if (isa<SwitchCase>(stmt))
+            return true;
+        if (isa<SwitchStmt>(stmt))
+            return true;
+        if (isa<WhileStmt>(stmt))
+            return true;
+        return false;
+    }
+
+    bool isScopeTop(const Decl *decl) {
+        if (isa<TranslationUnitDecl>(decl))
+            return true;
+        if (isa<FunctionDecl>(decl))
+            return true;
+        return false;
+    }
+
+    const Stmt *getScope(ASTContext *Context, DynTypedNode parent) {
+        int level = 0;
+        while ((parent.get<Stmt>() == nullptr ||
+                !isScopeTop(parent.get<Stmt>())) &&
+               (parent.get<Decl>() == nullptr ||
+                !isScopeTop(parent.get<Decl>()))) {
+            parent = Context->getParents(parent)[0];
+            level++;
+        }
+        if (parent.get<FunctionDecl>())
+            return parent.get<FunctionDecl>()->getBody();
+
+        if (parent.get<TranslationUnitDecl>())
+            return nullptr;
+
+        return parent.get<Stmt>();
+    }
+
+    const Stmt *getScope(ASTContext *Context, const Stmt *stmt) {
+        auto parent = DynTypedNode::create(*stmt);
+        return getScope(Context, parent);
+    }
+
+    const Stmt *getScope(ASTContext *Context, const DeclRefExpr *ref) {
+        auto parent = DynTypedNode::create(*ref);
+        return getScope(Context, parent);
+    }
+
+    const Stmt *getOuterScope(ASTContext *Context, const Stmt *inner) {
+        if (!isScopeTop(inner))
+            return getScope(Context, inner);
+        auto parent = Context->getParents(*inner)[0];
+        return getScope(Context, parent);
+    }
+
+    const Stmt *getScope(ASTContext *Context, const VarDecl *decl) {
+        auto parent = DynTypedNode::create(*decl);
+        return getScope(Context, parent);
+    }
+
+    bool scopeCovered(ASTContext *Context, const Stmt *scope,
+                      std::vector<const Stmt *> &scopes, const Stmt *topScope) {
+        if (std::find(scopes.begin(), scopes.end(), scope) != scopes.end())
+            return true;
+        if (scope == topScope)
+            return false;
+        auto outerScope = getOuterScope(Context, scope);
+        if (scope == outerScope)
+            return false;
+        return scopeCovered(Context, outerScope, scopes, topScope);
+    }
+
     void rewrite(ASTContext *Context, const VarDecl* Outer, const DeclRefExpr* Inner) {
         //Transform inner declref to vardecl
 
@@ -234,23 +343,65 @@ private:
             MultipleDeclInformation mdi = utilsDeclarations.getSourceInformationForMultipleDeclarationStmt(vardecls,
                                                                                                            Outer);
 
-            // Remove old vardecl and replace inner declref by vardecl
-            if(vardecls.size() == 1){
-                // simple case; we just remove entire declaration row and move it into ...
-                OurRewriter.RemoveText(mdi.fullRange);
-                auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
-                OurRewriter.ReplaceText(Inner->getSourceRange(), srctext);
+            auto oldScope = getScope(Context, Outer);
+            if (oldScope == getScope(Context, Inner)) {
+                // Remove old vardecl and replace inner declref by vardecl
+                if(vardecls.size() == 1){
+                    // simple case; we just remove entire declaration row and move it into ...
+                    auto parent = Context->getParents(*Inner)[0];
+                    OurRewriter.RemoveText(mdi.fullRange);
+                    auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
+                    if (Outer->hasInit() && parent.get<BinaryOperator>() &&
+                        parent.get<BinaryOperator>()->isAssignmentOp()) {
+                        srctext = srctext.substr(0, srctext.find('='));
+                    }
+                    OurRewriter.ReplaceText(Inner->getSourceRange(), srctext);
+                } else {
+                    // more complex case. We have multiple declarations such as int a,b,c;
+                    // in a row, we need to get the correct one and
+                    // we need to delete it correctly, including to delete commas and the semi-colon if necessary.
+
+                    OurRewriter.RemoveText(mdi.fullRange);
+                    auto srctype = getSourceTextStable(*Context, mdi.firstDecl->getLocStart(), mdi.firstDecl->getInnerLocStart());
+                    auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
+                    OurRewriter.ReplaceText(Inner->getSourceRange(), srctype + " " + srctext);
+                }
             } else {
-                // more complex case. We have multiple declarations such as int a,b,c;
-                // in a row, we need to get the correct one and
-                // we need to delete it correctly, including to delete commas and the semi-colon if necessary.
+                std::vector<const Stmt *> coveredScopes;
+                auto declrefs = DeclRefMap->getVarDeclToDeclRefExprs(Outer);
+                for (auto declref : declrefs) {
+                    auto newScope = getScope(Context, declref);
+                    if (scopeCovered(Context, newScope, coveredScopes, oldScope))
+                        continue;
+                    auto parent = Context->getParents(*declref)[0];
+                    if (parent.get<BinaryOperator>() == nullptr || !parent.get<BinaryOperator>()->isAssignmentOp()) {
+                        SuccessfulRewrite = false;
+                        return;
+                    }
+                    coveredScopes.push_back(newScope);
+                    // Remove old vardecl and replace inner declref by vardecl
+                    if (vardecls.size() == 1) {
+                        // simple case; we just remove entire declaration row
+                        // and move it into ...
+                        OurRewriter.RemoveText(mdi.fullRange);
+                        auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
+                        if (Outer->hasInit()) {
+                            srctext = srctext.substr(0, srctext.find('='));
+                        }
+                        OurRewriter.ReplaceText(declref->getSourceRange(), srctext);
+                    } else {
+                        // more complex case. We have multiple declarations such
+                        // as int a,b,c; in a row, we need to get the correct
+                        // one and we need to delete it correctly, including to
+                        // delete commas and the semi-colon if necessary.
 
-                OurRewriter.RemoveText(mdi.fullRange);
-                auto srctype = getSourceTextStable(*Context, mdi.firstDecl->getLocStart(), mdi.firstDecl->getInnerLocStart());
-                auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
-                OurRewriter.ReplaceText(Inner->getSourceRange(), srctype + " " + srctext);
+                        OurRewriter.RemoveText(mdi.fullRange);
+                        auto srctype = getSourceTextStable(*Context, mdi.firstDecl->getLocStart(), mdi.firstDecl->getInnerLocStart());
+                        auto srctext = getSourceTextStable(*Context, mdi.declOnlyRange.getBegin(), mdi.declOnlyRange.getEnd());
+                        OurRewriter.ReplaceText(declref->getSourceRange(), srctype + " " + srctext);
+                    }
+                }
             }
-
         } catch(CodeTransformationException& e) {
             SuccessfulRewrite = false;
             return;

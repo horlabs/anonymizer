@@ -1,6 +1,8 @@
 import os
+import re
 import subprocess
 import typing
+from collections import namedtuple
 
 import numpy as np
 
@@ -14,6 +16,11 @@ from evasion.Transformers.TransformerBase import TransformerBase
 from featureextractionV2.ClangTypes.StyloClangFeaturesGenerator import StyloClangFeaturesGenerator
 from featureextractionV2.ClangTypes.StyloLexemFeaturesGenerator import StyloLexemFeatureGenerator
 from featureextractionV2.StyloFeatures import StyloFeatures
+
+TransformDetails = namedtuple("TransformDetails",
+                              ["source_file", "source_file_copy", "savesrc_1", "cmdd_transform", "savesrc_2",
+                               "clangformat_cmd", "clangcompile_cmd", "error_file", "source_file_format",
+                               "source_file_modified"])
 
 
 class BBMCTSBatchAttackInstanceHandler:
@@ -113,8 +120,8 @@ class BBMCTSBatchAttackInstanceHandler:
             if os.path.exists(os.path.join(self.attackdirauth, "execute_all.sh")):
                 os.remove(os.path.join(self.attackdirauth, "execute_all.sh"))
 
-
-
+    def do_transform_format(details):
+        pass
 
     def transform_format_preprocess(self):
 
@@ -132,7 +139,8 @@ class BBMCTSBatchAttackInstanceHandler:
             for p in range(0, self.path_length):
 
                 # A. + B. Transformation Call + clang-format
-                source_file_modified = source_file_of_interest_basename + "_after_t.cpp"
+                source_file_modified = source_file_of_interest_basename + "_after_t." + \
+                                       curbbattinst.source_file.split(".")[-1]
 
                 # choose transformer randomly
                 np.random.seed(self.seed + ix * 11 + p)
@@ -168,9 +176,11 @@ class BBMCTSBatchAttackInstanceHandler:
                 # D. check if transformation was successfull, by compiling here only
                 clangcompile_cmd, source_file_format_exe = evasion.utils_attack_workflow.get_compileclang_call(
                     source_file=source_file_format,
-                    compilerflags=Config.compilerflags_list)
+                    compilerflags=Config.flag_list_cpp if source_file_format.endswith(".cpp") else Config.flag_list_c)
 
                 # if error, exit command
+                ignore_gets_error = f"perl -0777 -pi -e 's;(/usr/bin/ld: )?/tmp/[^\\n]*\\n[^:]*:[^:]*: (Warnung|warning): the " \
+                                    f"`gets\\x27 function is dangerous and should not be used.\\n;;g;' {error_file}\n"
                 error_check_transformer = "".join(["if [ -s ", error_file, " ]\n then \n exit 1 \n fi \n\n"])
                 savesrc_1 = self.__save_source_file(src_file=source_file_of_interest, prefix=str(p),
                                         ending="", bbatt=curbbattinst)
@@ -193,6 +203,7 @@ class BBMCTSBatchAttackInstanceHandler:
                     f.write(" ".join(clangformat_cmd))
 
                     f.write(" ".join(clangcompile_cmd))
+                    f.write(ignore_gets_error)
                     f.write(error_check_transformer)
 
                     f.write("rm " + source_file_modified + "\n\n")
@@ -265,51 +276,29 @@ class BBMCTSBatchAttackInstanceHandler:
             # E. Check if transformation has changed IO behaviour
             testfileout_test = os.path.join(os.path.dirname(source_file_of_interest),
                                             "A-small-practice_transformation.out")
-            ifostream_cmd = evasion.utils_attack_workflow.get_ifofstreampreprocesser_call(
-                source_file=source_file_of_interest,
-                inputstreampath=curbbattinst.testfilein,
-                outputstreampath=testfileout_test,
-                ifopreppath=Config.ifostreampreppath,
-                flags=Config.flag_list)
-
-            error_file_ifo = os.path.join(source_file_of_interest + ".ifo.stderr")
-            source_file_ifo = os.path.join(source_file_of_interest_basename + ".ifo.cpp")
-            savesrc_3 = self.__save_source_file(src_file=source_file_ifo, prefix="",
-                                                ending="", bbatt=curbbattinst)
-            # we need to check if ifo file has 1 row only and this row starts with Replace:
-            countlines = "NUMOFLINES=$(wc -l < " + error_file_ifo + ")\n"
-            error_ifo_check_transformer = "if [ $NUMOFLINES -ne 1 ]\n then \n exit 1 \n fi \n\n"
-            error_ifo_check_for_content = "".join(["if grep -q \"Replace:\" ", error_file_ifo,
-                                                   "; then : ; else exit 1 \n fi \n\n"])
 
 
             # F. Compile again with possibly adapted paths from ifostream preprocessor
             clangcompile_cmd, source_file_format_exe = evasion.utils_attack_workflow.get_compileclang_call(
-                source_file=source_file_ifo,
-                compilerflags=Config.compilerflags_list)
+                source_file=source_file_of_interest,
+                compilerflags=Config.flag_list_cpp if source_file_of_interest.endswith(".cpp") else Config.flag_list_c)
+            ignore_gets_error = f"perl -0777 -pi -e 's;(/usr/bin/ld: )?/tmp/[^\\n]*\\n[^:]*:[^:]*: (Warnung|warning): the " \
+                                f"`gets\\x27 function is dangerous and should not be used.\\n;;g;' {error_file}\n"
             error_check_transformer = "".join(["if [ -s ", error_file, " ]\n then \n exit 1 \n fi \n\n"])
 
             # G. Execute command
             # We handle ifostream's output parsing in bash, so that we do not have to switch to python.
-            execute_cmd = evasion.utils_attack_workflow.get_executecontestfile_call(
-                source_file_executable=source_file_format_exe, testfilein=curbbattinst.testfilein,
-                testfileout=testfileout_test, ifofstream=(True, True)
-            )
+            execute_cmd = ["LD_PRELOAD=" + Config.iohookspath, "LD_LIBRARY_PATH=" + Config.customlibspath,
+                           source_file_format_exe]
 
             # if a developer writes to stderr during executing, we need to ignore this by piping it into a file that we do not use later...
             execute_stderr = os.path.join(source_file_of_interest_basename + ".execute.stderr")
 
             # build execute command now...
-            execute_cmd = "EXECUTE=\"" + "".join(execute_cmd) + "\"\n\n"
+            execute_cmd = " ".join(
+                execute_cmd + ["<", curbbattinst.testfilein, "1>", testfileout_test, "2>", execute_stderr])
 
-            choose_input_stream = "\n".join(["while IFS=':' read -r var1 var2 var3", "do", "USE_INPUT=${var2}", "USE_OUTPUT=${var3}",
-                                             "done < " + error_file_ifo + "\n\n"])
-
-            input_stream_concat = "".join(["if [ ${USE_INPUT} -eq \"0\" ]\n then \n EXECUTE=\"$EXECUTE < ", curbbattinst.testfilein, " \" \n fi \n\n"])
-            output_stream_concat = "".join(["if [ ${USE_OUTPUT} -eq \"0\" ]\n then \n EXECUTE=\"$EXECUTE 1> ", testfileout_test, " \" \n fi \n\n"])
-            output_stream_concat2 = "".join(["EXECUTE=\"$EXECUTE 2> ", execute_stderr, " \" \n\n"])
-
-            mv_cmd = " ".join(["mv", source_file_ifo, source_file_of_interest])
+            mv_cmd = ""
 
             # H. Features: Compute Features in parallel as well != BBAttackInstance,
             #    which takes longer for all transf. if not parallelly done
@@ -331,25 +320,14 @@ class BBMCTSBatchAttackInstanceHandler:
 
 
             with open(os.path.join(curbbattinst.attackdirauth, "execute_extractfeats.sh"), "a") as f:
-                f.write("# Ifostream Handling \n")
-                ifostream_cmd.extend(["2>>", error_file_ifo, "1>", source_file_ifo, "\n\n"])
-                f.write(" ".join(ifostream_cmd))
-
-                f.write(countlines)
-                f.write(error_ifo_check_transformer)
-                f.write(error_ifo_check_for_content)
 
                 f.write("# **Compile and Execute** \n\n")
                 clangcompile_cmd.extend(["2>>", error_file, "\n\n"])
                 f.write(" ".join(clangcompile_cmd))
+                f.write(ignore_gets_error)
                 f.write(error_check_transformer)
 
-                f.write(choose_input_stream)
                 f.write(execute_cmd)
-                f.write(input_stream_concat)
-                f.write(output_stream_concat)
-                f.write(output_stream_concat2)
-                f.write("eval ${EXECUTE}\n\n")
                 f.write(mv_cmd + "\n\n")
 
                 f.write("# ** Features **\n\n")
@@ -449,7 +427,11 @@ class BBMCTSBatchAttackInstanceHandler:
         if os.path.getsize(err_file) > 0:
             with open(err_file, "r") as f:
                 lines = f.readlines()
-            raise Exception(str(lines))
+            if not re.match(
+                    "(?:/usr/bin/ld: )?/tmp/[^\\\]*\\n[^:]*:[^:]*: (?:warning|Warnung): "
+                    "the `gets' function is dangerous and should not be used\.\\n",
+                    "".join(lines)):
+                raise Exception(str(lines))
 
 
     def __check_error_file_transformations(self, err_file: str, attinstance: BBAttackInstance, iteration: int, check_index: int):

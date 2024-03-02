@@ -2,7 +2,7 @@
 import configparser
 import os
 import sys
-
+from pathlib import Path
 
 ### Read config.ini to get all path information such as path to this repo, path to clang, path to IWYU, ...
 __config_ini_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.ini")
@@ -22,13 +22,15 @@ llvmconfig_libdir = config["CLANG"].get("libdir", os.path.join(llvmconfig_prefix
 
 # Get information about the dataset
 probsperprogrammer = 8
-suffix = "_2017_8_formatted_macrosremoved"
+suffix = "_c_only_formatted_macrosremoved_commentsremoved"
 # suffix="_2017_8"
-datasetpath = os.path.join(repo_path, "data/dataset_2017/dataset" + suffix)
-exampledatasetpath = os.path.join(repo_path, "data/dataset_2017/example_dataset" + suffix)
-arffile = os.path.join(repo_path, "data/dataset_2017/libtoolingfeatures" + suffix, "lexical_features.arff")
-joerndats = os.path.join(repo_path + "data/dataset_2017/libtoolingfeatures" + suffix)
-learnmodelspath = os.path.join(repo_path, "data/ClassificationModels")
+multifilesetup = False # indicate if multiple files are necessary to compile the samples (github dataset)
+datasetpath = os.path.join(repo_path, "data/dataset_c_only/dataset" + suffix)
+exampledatasetpath = os.path.join(repo_path,
+                                  "data/dataset_2017/example_dataset" + "_2017_8_formatted_macrosremoved")  # suffix)
+arffile = os.path.join(repo_path, "data/dataset_c_only/libtoolingfeatures" + suffix, "lexical_features.arff")
+joerndats = os.path.join(repo_path + "data/dataset_c_only/libtoolingfeatures" + suffix)
+learnmodelspath = os.path.join(repo_path, "data/ClassificationModels", "modelsuffix" + suffix)
 evasionattackpath = os.path.join(repo_path, "data/attackresults")
 
 # Get and set things for attack
@@ -44,7 +46,7 @@ def createattackdir(attdir: str):
     if not os.path.exists(attdir):
         # raise FileNotFoundError("Attack dir '{:s}' does not exist.".format(attackdir))
         print("Attack dir does not exist. I will create it: {}".format(attdir), file=sys.stderr)
-        os.makedirs(attdir)
+        os.makedirs(attdir, exist_ok=True)
 
 noofparallelthreads = int(config["AUTHORSHIP_EVASION"]["noofparallelthreads"])
 noofparallelattacks = int(config["AUTHORSHIP_EVASION"]["noofparallelattacks"])
@@ -70,19 +72,33 @@ transformersdir = os.path.join(repo_path, "src/LibToolingAST/cmake-build-release
 transformercsvfile = os.path.join(repo_path, "src/LibToolingAST/config_transformeroptions.csv")
 codeinfodir = os.path.join(repo_path, "src/LibToolingAST/cmake-build-release/codeinfo")
 ifostreampreppath = os.path.join(transformersdir, "IOTransformers", "ifostream_preprocessor")
+iohookspath = os.path.join(repo_path, "src/LibToolingAST/cmake-build-release/libhooks.so")
+assert (Path(iohookspath).exists())
+customlibspath = os.path.join(repo_path, "src/LibToolingAST")
 
-flag_list = ['-w',
-             '-std=c++11',
-             '-I{}'.format(os.path.join(llvmconfig_libdir, "clang/5.0.0/include/")),
-             '-include',
-             '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/ourerrors.h'))]
+flag_list_cpp = ['-w',
+                 '-std=c++11',
+                 '-I{}'.format(os.path.join(llvmconfig_libdir, "clang/5.0.0/include/")),
+                 '-include',
+                 '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/ourerrors.h'))]
+
+flag_list_c = ['-w',
+               '-c',
+               '-lm',
+               '-std=c99',
+               '-I{}'.format(os.path.join(llvmconfig_libdir, "clang/5.0.0/include/")),
+               '-include', '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/nocstd.h')),
+               '-L{}'.format(os.path.join(repo_path, 'src/LibToolingAST/')),
+               '-lnocstd']
+
+flag_list_github = ["-c"] + flag_list_c.copy()
 
 #flags = ' '.join(flag_list)
 
 compilerflags_list = ['-w',
-             '-std=c++11',
-             '-include',
-             '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/ourerrors.h'))]
+                      '-std=c++11',
+                      '-include',
+                      '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/ourerrors.h'))]
 
 #compilerflags = ' '.join(compilerflags_list)
 

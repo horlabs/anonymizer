@@ -13,13 +13,16 @@ bool DeclRefMapping::insert_declref(const DeclRefExpr* d) {
 
         if(declrefmap.find(ddecl) != declrefmap.end()){
             // d is already in
-            declrefmap[ddecl].push_back(d);
+            if (std::find(declrefmap[ddecl].begin(), declrefmap[ddecl].end(), d) ==
+                    declrefmap[ddecl].end()) {
+                declrefmap[ddecl].push_back(d);
+            }
 //            sourcelocationtovardecls[slkey].push_back(ddecl);
         } else {
 //            std::vector<const DeclRefExpr*> dvec;
 //            dvec.push_back(d);
 //            declrefmap[ddecl] = dvec;
-            declrefmap[ddecl] = std::vector<const DeclRefExpr*> {d};
+            declrefmap[ddecl] = std::vector<const Expr*>{d};
 //            sourcelocationtovardecls[slkey] = std::vector<const VarDecl*> {ddecl};
         }
 
@@ -30,12 +33,61 @@ bool DeclRefMapping::insert_declref(const DeclRefExpr* d) {
 
 }
 
+bool DeclRefMapping::insert_memberexpr(const MemberExpr *m) {
+    // get Decl to MemberExpr
+    if (auto fdecl = dyn_cast<FieldDecl>(m->getMemberDecl())) {
+        auto ddecl = cast<VarDecl>(fdecl);
+//        auto slkey = getkeySourceLocation(ddecl->getLocStart());
+
+        if (declrefmap.find(ddecl) != declrefmap.end()) {
+            // d is already in
+            if (std::find(declrefmap[ddecl].begin(), declrefmap[ddecl].end(), m) ==
+                    declrefmap[ddecl].end()) {
+                declrefmap[ddecl].push_back(m);
+            }
+//            sourcelocationtovardecls[slkey].push_back(ddecl);
+        } else {
+//            std::vector<const DeclRefExpr*> dvec;
+//            dvec.push_back(d);
+//            declrefmap[ddecl] = dvec;
+            declrefmap[ddecl] = std::vector<const Expr *>{m};
+//            sourcelocationtovardecls[slkey] = std::vector<const
+//            VarDecl*> {ddecl};
+        }
+
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool DeclRefMapping::insert_ctorinit(const CXXCtorInitializer *c) {
+    // get Decl to ctor
+    auto ddecl = cast<VarDecl>(c->getMember());
+//        auto slkey = getkeySourceLocation(ddecl->getLocStart());
+
+    if (ctormap.find(ddecl) != ctormap.end()) {
+        // d is already in
+        if (std::find(ctormap[ddecl].begin(), ctormap[ddecl].end(), c) ==
+                ctormap[ddecl].end()) {
+            ctormap[ddecl].push_back(c);
+        }
+    } else {
+        ctormap[ddecl] = std::vector<const CXXCtorInitializer *>{c};
+    }
+
+    return true;
+}
+
 bool DeclRefMapping::insert_vardecl(const VarDecl* d){
     auto slkey = getRowColumn(d->getLocStart(), sm, false);
 
     if(sourcelocationtovardecls.find(slkey) != sourcelocationtovardecls.end()){
         // sl is already in
-        sourcelocationtovardecls[slkey].push_back(d);
+        if (std::find(sourcelocationtovardecls[slkey].begin(),sourcelocationtovardecls[slkey].end(),d)
+                 == sourcelocationtovardecls[slkey].end()) {
+            sourcelocationtovardecls[slkey].push_back(d);
+        }
     } else {
         sourcelocationtovardecls[slkey] = std::vector<const VarDecl*> {d};
     }
@@ -43,18 +95,30 @@ bool DeclRefMapping::insert_vardecl(const VarDecl* d){
 }
 
 
-std::vector<const DeclRefExpr*> DeclRefMapping::getVarDeclToDeclRefExprs(const VarDecl* ddecl){
+std::vector<const Expr*> DeclRefMapping::getVarDeclToDeclRefExprs(const VarDecl* ddecl){
 
     if(declrefmap.find(ddecl) != declrefmap.end()){
         // d is already in
         return declrefmap[ddecl];
     } else {
-        std::vector<const DeclRefExpr*> dvec;
+        std::vector<const Expr*> dvec;
         return dvec;
     }
 
 }
 
+
+std::vector<const CXXCtorInitializer *> DeclRefMapping::getFieldDeclToCXXCtorInitializers(const FieldDecl *ddecl) {
+    auto *vdecl = cast<VarDecl>(ddecl);
+
+    if (ctormap.find(vdecl) != ctormap.end()) {
+        // d is already in
+        return ctormap[vdecl];
+    } else {
+        std::vector<const CXXCtorInitializer *> dvec;
+        return dvec;
+    }
+}
 
 bool DeclRefMapping::insert_declstmt(const DeclStmt* ds) {
 
@@ -66,7 +130,10 @@ bool DeclRefMapping::insert_declstmt(const DeclStmt* ds) {
     for (DeclStmt::const_decl_iterator db = ds->decl_begin(), de = ds->decl_end(); db != de; ++db) {
         const Decl *vd = *db;
         if (auto vardecl = dyn_cast<VarDecl>(vd)) {
-            declstmttovardecls[ds].push_back(vardecl);
+            if (std::find(declstmttovardecls[ds].begin(),declstmttovardecls[ds].end(),vardecl)
+                     == declstmttovardecls[ds].end()) {
+                declstmttovardecls[ds].push_back(vardecl);
+            }
         }
     }
 

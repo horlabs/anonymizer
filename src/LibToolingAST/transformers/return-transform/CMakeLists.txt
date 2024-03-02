@@ -26,3 +26,21 @@ target_link_libraries(return_transformer
 #        ${MY_CLANG_ROOT_DIR}/include
 #        ${MY_CLANG_ROOT_DIR}/lib/clang/5.0.0/include/
 #)
+
+add_executable(unnecessaryreturn_transformer
+        RemoveUnnecessaryReturn.cpp
+        ../lib/SourceTextHelper.cpp)
+
+TARGET_LINK_LIBRARIES(
+        unnecessaryreturn_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(voidreturn_transformer
+        AddVoidReturn.cpp
+        ../lib/SourceTextHelper.cpp)
+
+TARGET_LINK_LIBRARIES(
+        voidreturn_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")

@@ -117,8 +117,8 @@ public:
                 // No default case in switch, since:  if we extended the enum, we could fall into the default case
                 bool ret = false;
                 switch(cmdoption){
-                    case couttoprintf: ret = transformOutputStreamCall(e, couttoprintf); break;
-                    case couttostringstream: ret = transformOutputStreamCall(e, couttostringstream); break;
+                    case couttoprintf: ret = transformOutputStreamCall(e, couttoprintf, seed); break;
+                    case couttostringstream: ret = transformOutputStreamCall(e, couttostringstream, seed); break;
                     case splitcoutintotwo: ret = splitCoutCommand(e); break;
                     case couttoofstream: break; // make compiler happy
                     case ofstreamtocout: break;  // make compiler happy
@@ -293,7 +293,7 @@ public:
      * @param e Expr with output stream
      * @return true if successful, else false
      */
-    bool transformOutputStreamCall(const Expr* e, Strategy cmdoption) {
+    bool transformOutputStreamCall(const Expr* e, Strategy cmdoption, int seed) {
 
         if(auto ecallexpr = dyn_cast<CallExpr>(e)){
             if(getSourceText(Context, ecallexpr, false).find("cout") != std::string::npos){
@@ -313,7 +313,7 @@ public:
 
                 // III. we try stringstream and print it via printf
                 if(cmdoption == couttostringstream)
-                    if(transformCoutToString(ecallexpr))
+                    if(transformCoutToString(ecallexpr, seed))
                         return true;
 
                 return false;
@@ -747,7 +747,7 @@ public:
      * @param e
      * @return true if it worked.
      */
-    bool transformCoutToString(const CallExpr *e){
+    bool transformCoutToString(const CallExpr *e, int seed) {
 
         // Actually we can reuse most of the expressions that cout uses, however,
         // we need to set the precision and fixed parameters that are not automatically taken from cout..
@@ -778,7 +778,7 @@ public:
         auto srcrange = getSourceRangeWithSemicolon(Context, e);
 
         // B-1: Define stringstream variable
-        std::string stringstreamvarname = RenamingGuide::getRandomStringWith(4);
+        std::string stringstreamvarname = RenamingGuide::getRandomStringWith(4, seed);
         std::string stringstreamdef = append_std("stringstream") + " " + stringstreamvarname + ";";
 //        OurRewriter.InsertTextBefore(e->getLocStart(), stringstreamdef);
 

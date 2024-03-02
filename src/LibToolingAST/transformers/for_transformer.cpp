@@ -103,12 +103,18 @@ public:
         Expr *Cond = ForStatement->getCond();
         Expr *Inc = ForStatement->getInc();
 
+    auto bodyStart = _Body->getLocStart();
+    if (bodyStart.isMacroID())
+    {
+      auto expansionrange = SM.getImmediateExpansionRange(bodyStart);
+      bodyStart = expansionrange.first;
+    }
+
 //            llvm::errs() << getSourceText(S) << "\n";
         // TODO check if we need to open a new scope.
 
-        ptrdiff_t _diff =
-                SM.getCharacterData(_Body->getLocStart()) -
-                SM.getCharacterData(ForStatement->getLocStart()) - 1;
+    ptrdiff_t _diff = SM.getCharacterData(bodyStart) -
+                      SM.getCharacterData(ForStatement->getLocStart()) - 1;
         auto diff = (unsigned int) _diff;
 
         std::string lbrace;
@@ -204,7 +210,12 @@ private:
 
                 // First, use the CFG to find the loop to which this continue stmt belongs.
                 try{
-                    auto loopstmt = ControlDataFlowGraphQueryHandler::findLoopStmtAfterContinueStmt(this->cfggraph, continues[i]);
+                    auto parent = Context.getParents(*continues[i])[0];
+                    while (!parent.get<ForStmt>() && !parent.get<WhileStmt>()){
+                        parent = Context.getParents(parent)[0];
+                    }
+                    auto loopstmt = parent.get<Stmt>();
+
                     if(loopstmt != ForStatement){
                         continue;
                     }

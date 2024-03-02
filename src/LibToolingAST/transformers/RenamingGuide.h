@@ -9,7 +9,7 @@
 class RenamingGuide {
 
 public:
-    static std::string getRandomStringWith(int length);
+    static std::string getRandomStringWith(int length, int seed = 5489);
 
 };
 

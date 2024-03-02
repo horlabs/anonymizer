@@ -8,6 +8,7 @@ import pandas
 import Configuration as Config
 import evasion.utils_attack as ua
 import evasion.utils_attack_workflow as uaw
+from classification.MismatchException import MismatchException
 from evasion.AttackLogging.Attack_Logging import Logger
 from evasion.Author import Author
 from evasion.BBAttackHandler import BBAttackHandler
@@ -30,7 +31,7 @@ class BBAttackInstance:
     """
 
     def __init__(self, sourceauthor: Author, targetauthor: Author,
-                 attackdirauth: str, bbattackhandler: 'BBAttackHandler') -> None:
+                 attackdirauth: str, bbattackhandler: 'BBAttackHandler', anonymize=False) -> None:
         """
         Inits a single attack instance. If dodging attack, use the same Author object for sourceauthor and targetauthor.
         :param sourceauthor: the source author.
@@ -43,6 +44,7 @@ class BBAttackInstance:
         self.attackdirauth: str = attackdirauth
         self.sourceauthor = sourceauthor
         self.targetauthor = targetauthor
+        self.anonymize = anonymize
 
         # The following attributes will be set up by self.set_up():
         self.target_source_file: str = None
@@ -56,8 +58,6 @@ class BBAttackInstance:
         self.scoreprednew: float = None
         self.classprednew: int = None
 
-        self.ifofstream: typing.Tuple[bool, bool] = None
-
         self.log_chosentransformers: pandas.DataFrame = pandas.DataFrame(columns=["transformer_id", "transformer_call",
                                                                                   "success", "score", "class"])
 
@@ -67,7 +67,6 @@ class BBAttackInstance:
         # set up logger, we can only do so after set_up since we need to know log_director before
         self.logger = Logger(logfilepath=self.log_directory,
                              logging_id=self.sourceauthor.author + str(self.targetauthor.author))
-        self.logger.debug_details("INIT: IfOfStream: {}".format(str(self.ifofstream)))
         self.logger.debug_details("INIT: Pred:{} /({})".format(round(self.scoreprednew, 4), self.classprednew))
 
 
@@ -149,48 +148,46 @@ class BBAttackInstance:
             self.target_source_file = uaw.copy_sourcefile(datasetpath=Config.datasetpath, attackdirauth=self.attackdirauth,
                                                       authiid=self.targetauthor.authiid, author=self.targetauthor.author)
 
-        self.testfilein = os.path.join(self.attackdirauth, "A-small-practice.in")
-        self.testfileout = os.path.join(self.attackdirauth, "A-small-practice.out")
+        if not Config.suffix.startswith("_github"):
+            self.testfilein = os.path.join(self.attackdirauth, "A-small-practice.in")
+            self.testfileout = os.path.join(self.attackdirauth, "A-small-practice.out")
 
-        # B. Get correct A-small-practice.in file
-        # Check if author needs some special input treatment
-        reduced_testfile: bool = uaw.check_if_author_needs_reduced_testfile(authiid=self.sourceauthor.authiid,
-                                                                            author=self.sourceauthor.author,
-                                                                            call_instructions_csv_path=Config.call_instructions_csv_path)
+            # B. Get correct A-small-practice.in file
+            # Check if author needs some special input treatment
+            reduced_testfile: bool = uaw.check_if_author_needs_reduced_testfile(authiid=self.sourceauthor.authiid,
+                                                                                author=self.sourceauthor.author,
+                                                                                call_instructions_csv_path=Config.call_instructions_csv_path)
 
-        # Copy A-small-practice.in file to current attack directory
-        uaw.copytestfile(testfilesdir=Config.testfilesdir, authiid=self.sourceauthor.authiid,
-                         targettestfile=self.testfilein, reduced=reduced_testfile)
+            # Copy A-small-practice.in file to current attack directory
+            uaw.copytestfile(testfilesdir=Config.testfilesdir, authiid=self.sourceauthor.authiid,
+                            targettestfile=self.testfilein, reduced=reduced_testfile)
 
-        # C. Check if file reads input/ouput via file and not via stdout/stderr, so that we need to adapt paths..
-        self.ifofstream = uaw.ifofstreampreprocesser(source_file=source_file_forattack,
-                                inputstreampath=self.testfilein,
-                                outputstreampath=self.testfileout, #os.path.basename
-                                ifopreppath=Config.ifostreampreppath, flags = Config.flag_list)
+            # D. Create the A-small-practice.out file.
+            source_file_exe: str = uaw.compileclang(
+                source_file=source_file_forattack,
+                compilerflags=Config.compilerflags_list if source_file_forattack.endswith(".cpp") else Config.flag_list_c)
+            uaw.executecontestfile(source_file_executable=source_file_exe, testfilein=self.testfilein,
+                                testfileout=self.testfileout)
+            os.remove(source_file_exe)
 
-        # D. Create the A-small-practice.out file.
-        source_file_exe: str = uaw.compileclang(source_file=source_file_forattack, compilerflags=Config.compilerflags_list)
-        uaw.executecontestfile(source_file_executable=source_file_exe, testfilein=self.testfilein,
-                               testfileout=self.testfileout, ifofstream=self.ifofstream)
-        os.remove(source_file_exe)
-
-        # E. Compute the hash of the output file. We will check that output is not changed by a transformation
-        self.originaloutputhash = uaw.computeHash(source_file=self.testfileout)
+            # E. Compute the hash of the output file. We will check that output is not changed by a transformation
+            self.originaloutputhash = uaw.computeHash(source_file=self.testfileout)
 
 
         # F. Load features for the first time and get initial prediciton
         self.get_model_prediction(source_file = source_file_forattack, target_class=self.targetauthor.true_class, verbose = 0)
 
         # F.2 Check outputs...
-        if self.classprednew != self.sourceauthor.true_class:
+        if self.classprednew != self.sourceauthor.true_class and not self.anonymize:
 
             # it is possible that source author is already not correctly predicted if we changed the path with ifostream
             self.get_model_prediction(source_file=self.original_source_file, target_class=self.targetauthor.true_class,
                                       verbose=0)
             # If still unequal, it might be something more serious:
             if self.classprednew != self.sourceauthor.true_class:
-                raise Exception("Mismatch of true and predicted class before attack, should not be the case, for: {},{}".
-                    format(self.sourceauthor.author, self.targetauthor.author))
+                raise MismatchException(
+                    "Mismatch of true and predicted class before attack, should not be the case, for: {},{}".
+                        format(self.sourceauthor.author, self.targetauthor.author))
             else:
                 # Otherwise, it is really due to ifostream and we can continue ...
                 # print("Mismatch of true class and predicted class due to ifostream,{},{}".format(
@@ -294,7 +291,7 @@ class BBAttackInstance:
             self.save_source_file(src_file=self.source_file, prefix=prefix, ending="before")
 
             # A. do transformation
-            source_file_modified = os.path.splitext(self.source_file)[0] + "_raw.cpp"
+            source_file_modified = os.path.splitext(self.source_file)[0] + "_raw." + self.source_file.split(".")[-1]
             transf_call, err = currenttransformer.dotransformercall(source_file=self.source_file,
                                                                     target_file=source_file_modified,
                                                                     seed=seed)
@@ -307,16 +304,14 @@ class BBAttackInstance:
 
             # C. Check if transformation has changed IO behaviour
             testfileout_test = os.path.join(os.path.dirname(source_file_format), "A-small-practice_transformation.out")
-            self.ifofstream = uaw.ifofstreampreprocesser(source_file=source_file_format,
-                                                         inputstreampath=self.testfilein,
-                                                         outputstreampath=testfileout_test,
-                                                         ifopreppath=Config.ifostreampreppath, flags=Config.flag_list)
             self.save_source_file(src_file=source_file_format, prefix=prefix, ending="final")
 
             # D. check if transformation was successful
-            source_file_format_exe: str = uaw.compileclang(source_file=source_file_format, compilerflags=Config.compilerflags_list)
+            source_file_format_exe: str = uaw.compileclang(
+                source_file=source_file_format,
+                compilerflags=Config.flag_list_cpp if source_file_format.endswith(".cpp") else Config.flag_list_c)
             uaw.executecontestfile(source_file_executable=source_file_format_exe, testfilein=self.testfilein,
-                                   testfileout=testfileout_test, ifofstream=self.ifofstream)
+                                   testfileout=testfileout_test)
 
             transformedhash = uaw.computeHash(source_file=testfileout_test)
             if transformedhash != self.originaloutputhash:

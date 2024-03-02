@@ -50,6 +50,22 @@ public:
     bool insert_declref(const DeclRefExpr* d);
 
     /**
+     * Insert a MemberExpr to DeclRefMapping.
+     * This is necessary to get a mapping from a FieldDecl to all its usages (MemberExpr).
+     * @param m
+     * @return true if everything works
+     */
+    bool insert_memberexpr(const MemberExpr *m);
+
+    /**
+     * Insert a CXXCtorInitializer to DeclRefMapping.
+     * This is necessary to get a mapping from a FieldDecl to its usages in all constructors.
+     * @param c
+     * @return true if everything works
+     */
+    bool insert_ctorinit(const CXXCtorInitializer *c);
+
+    /**
      * Insert a VarDecl to DeclRefMapping.
      * This is necessary to get a mapping from a SourceLocation to all VarDecl's.
      * E.g. we could have int a,b,c; <-- Multiple VarDecl's at one line/DeclStmt.
@@ -74,7 +90,12 @@ public:
     /**
      * Get all DeclRefExprs for a given VarDecl.
      */
-    std::vector<const DeclRefExpr*> getVarDeclToDeclRefExprs(const VarDecl* ddecl);
+    std::vector<const Expr*> getVarDeclToDeclRefExprs(const VarDecl* ddecl);
+
+    /**
+     * Get all CXXCtorInitializers for a given FieldDecl.
+     */
+    std::vector<const CXXCtorInitializer *> getFieldDeclToCXXCtorInitializers(const FieldDecl *ddecl);
 
     /**
      * Get DeclStmt for a given VarDecl.
@@ -103,8 +124,9 @@ private:
 //    ASTContext *Context;
     SourceManager &sm;
 
-    std::map<const VarDecl*, std::vector<const DeclRefExpr*> > declrefmap;
+    std::map<const VarDecl*, std::vector<const Expr*> > declrefmap; // Could be DeclRefExpr or MemberExpr
     std::map<const DeclStmt*, std::vector<const VarDecl*> > declstmttovardecls;
+    std::map<const VarDecl *, std::vector<const CXXCtorInitializer*> > ctormap;
     std::map<std::pair<unsigned,unsigned>, std::vector<const VarDecl*> > sourcelocationtovardecls;
 
 };

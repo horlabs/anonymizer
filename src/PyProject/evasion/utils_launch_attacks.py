@@ -8,7 +8,7 @@ from evasion.BBAttackHandler import BBAttackHandler
 from evasion.AttackStatus import AttackStatus
 from evasion.AttackResult import AttackResult
 from evasion.EvasionAlgorithm import EvasionAlgorithm
-from evasion.BlackBox.AttackSettings import MCTSClassicSettings, SimAnnealingSettings
+from evasion.BlackBox.AttackSettings import MCTSClassicSettings, SimAnnealingSettings, HilllClimbingAnonymizeSettings
 
 from evasion.AttackLogging import SharedCounters
 
@@ -17,6 +17,8 @@ import os
 import pickle
 import argparse
 import typing
+
+from anonymize import HillClimbingAnonymizeAttack
 
 
 def launch_attack(args: tuple,
@@ -30,6 +32,8 @@ def launch_attack(args: tuple,
         retresult = domcts(args, counter_eq, attack_settings)
     elif attack_settings.evasion_algorithm == EvasionAlgorithm.SimAnnealing:
         retresult = doannealing(args, counter_eq, attack_settings)
+    elif attack_settings.evasion_algorithm == EvasionAlgorithm.HillClimbing_anonym:
+        retresult = doanonymize(args, counter_eq, attack_settings)
     else:
         raise Exception("Wrong attack strategy chosen as parameter")
 
@@ -71,6 +75,48 @@ def doannealing(args: tuple,
             # since error could also happen due to IO blocking error (that sometimes occured on some machines..)
             time.sleep(5)
 
+    counter_eq.decrement()
+    add_attack_result_to_sharedcounter(attackresult=lastresult, counter=counter_eq)
+    show_final_attack_stats(logger=logger, counter=counter_eq)
+
+    return lastresult
+
+
+def doanonymize(args: tuple,
+                counter_eq: SharedCounters.SharedCounterSingle,
+                attack_settings: HilllClimbingAnonymizeSettings) -> AttackResult:
+    """
+    Starts HillClimbing/Sim.Annealing for attack.
+    """
+    sourceauthor, targetauthor, attackdirauthtarget, testlearnsetup, seed_range, logger = args
+
+    # try various seeds
+    lastresult: AttackResult = None
+    for curseed in range(seed_range[0], seed_range[1]):
+
+        logger.debug("-".join(["Start", sourceauthor.author, targetauthor.author, str(curseed)]))
+
+        attackhandler: 'BBAttackHandler' = HillClimbingAnonymizeAttack.HillClimbingAttack(
+            attackdirauth=attackdirauthtarget,
+            sourceauthor=sourceauthor,
+            targetauthor=targetauthor,
+            learnsetup=testlearnsetup,
+            hillclimbingsettings=attack_settings,
+            initialseed=curseed,
+            )
+
+        results: AttackResult = attackhandler.run_attack()
+
+        log_attack_process(logger=logger, attackresult=results)
+        log_seed_process(status=results.attackstatus == AttackStatus.SUCCESS, curseed=curseed,
+                         seedrange=seed_range, logger=logger)
+
+        lastresult = results
+        if results.attackstatus == AttackStatus.SUCCESS:
+            break
+        elif results.attackstatus == AttackStatus.ERROR:
+            # since error could also happen due to IO blocking error (that sometimes occured on some machines..)
+            time.sleep(5)
 
     counter_eq.decrement()
     add_attack_result_to_sharedcounter(attackresult=lastresult, counter=counter_eq)
@@ -100,7 +146,6 @@ def domcts(args: tuple,
     else:
         raise Exception("Wrong evasion_algorithm")
 
-
     lastresult: AttackResult = attackhandler.run_attack()
     log_attack_process(logger=logger, attackresult=lastresult)
 
@@ -108,7 +153,6 @@ def domcts(args: tuple,
     add_attack_result_to_sharedcounter(attackresult=lastresult, counter=counter_eq)
     show_final_attack_stats(logger=logger, counter=counter_eq)
     return lastresult
-
 
 
 def run_simulation(objInstance):
@@ -194,6 +238,9 @@ def log_attack_process(logger, attackresult: AttackResult):
     else:
         logger.debug("Status for {} -> {}".format(
             attackresult.sourceauthor.author, attackresult.targetauthor.author))
+        if hasattr(attackresult, "final_distance") and attackresult.final_distance != None:
+            logger.debug(
+                f"Distance reduced from {round(attackresult.initial_distance, 5)} to {round(attackresult.final_distance, 5)}")
         logger.debug(str(attackresult.attackstatus))
         # logger.debug("\n")
 

@@ -3,9 +3,22 @@
 #define LIBRARY
 
 #include <string.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
+#include <inttypes.h>
 
-void
-strrev(char *str) {
+#include "nocstd.h"
+
+errno_t fopen_s(FILE **f, const char *name, const char *mode) {
+    errno_t ret = 0;
+    *f = fopen(name, mode);
+    if (!*f)
+        ret = errno;
+    return ret;
+}
+
+void strrev(char *str) {
     int i;
     int j;
     unsigned char a;
@@ -17,8 +30,7 @@ strrev(char *str) {
     }
 }
 
-int
-itoa(int num, char *str, int base) {
+char* itoa(int num, char *str, int base) {
     int sum = num;
     int i = 0;
     int digit;
@@ -32,5 +44,13 @@ itoa(int num, char *str, int base) {
     } while (sum);
     str[i] = '\0';
     strrev(str);
-    return 0;
+    return str;
+}
+
+void _sleep(unsigned int msec) {
+    usleep(msec);
+}
+
+int getch(void) {
+    return getchar();
 }

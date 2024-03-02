@@ -1,4 +1,4 @@
-# import multiprocessing
+import multiprocessing
 from abc import ABC, abstractmethod
 
 
@@ -39,6 +39,48 @@ class SharedCounter(ABC):
     def get_stats(self):
         pass
 
+
+class SharedCounterParallel(SharedCounter):
+    """
+    Shared Counter that works with multiprocessing and where values can be saved/retrieved safely.
+    """
+
+    def __init__(self, initval=0):
+        super(SharedCounterParallel, self).__init__()
+        self.val = multiprocessing.Value('i', initval)
+        self.success = multiprocessing.Value('i', 0)
+        self.nosuccess = multiprocessing.Value('i', 0)
+        self.error = multiprocessing.Value('i', 0)
+        self.misclass = multiprocessing.Value("i", 0)
+        self.lock = multiprocessing.Lock()
+
+    def decrement(self):
+        with self.lock:
+            self.val.value -= 1
+
+    def value(self):
+        with self.lock:
+            return self.val.value
+
+    def increment_success(self):
+        with self.lock:
+            self.success.value += 1
+
+    def increment_nosuccess(self):
+        with self.lock:
+            self.nosuccess.value += 1
+
+    def increment_misclass(self):
+        with self.lock:
+            self.misclass.value += 1
+
+    def increment_error(self):
+        with self.lock:
+            self.error.value += 1
+
+    def get_stats(self):
+        with self.lock:
+            return self.success.value, self.nosuccess.value, self.misclass.value, self.error.value
 
 
 class SharedCounterSingle(SharedCounter):

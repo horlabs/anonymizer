@@ -3,6 +3,8 @@
 //
 
 #include "ControlFlowGraphCore.h"
+#include <fstream>
+#include <iostream>
 
 // TODO document that if we have templated functions, we only save the generic function, not each specialization.
 
@@ -20,92 +22,94 @@ ControlFlowGraphCore::ControlFlowGraphCore(ASTContext *Context)
         : Context(Context), sm(Context->getSourceManager()) {};
 
 
-bool ControlFlowGraphCore::addFunctionDecl(const FunctionDecl *f){
+bool ControlFlowGraphCore::addFunctionDecl(const FunctionDecl *f, bool onlyDeclaration) {
 
     // Consider declaration without definition.
-    if(!f->isThisDeclarationADefinition()){
+    if(!f->isThisDeclarationADefinition() || onlyDeclaration) {
         // just create a placeholder for the function, since we have just a declaration without definition here.
         // we will overwrite this vertex later when we visit the declaration with definition. In the meantime,
         // in this way we can create edges to this function.
         // Moreover, we always use getUniqueFunctionNameAsString, since >1 functions may have the same name,
         // but vary due to params..
         createNewVertex(0, 0, nullptr, false, f, getUniqueFunctionNameAsString(f), nullptr);
-    } else {
-
-        if(!f->hasBody()){
-            // s.th. like stall() = default; inside a struct/class will have no body. Not critical, probably.
+        return true;
+    }
+    if(!f->hasBody()){
+        // s.th. like stall() = default; inside a struct/class will have no body. Not critical, probably.
 #ifdef MYDEBUG_CFG
-            FullSourceLoc fullLoc_saved(f->getLocStart(), sm);
-            llvm::errs() << "Note: Visiting no body function:" << getUniqueFunctionNameAsString(f) << "\t"
-                         << "row:" << fullLoc_saved.getSpellingLineNumber() << "\n";
+        FullSourceLoc fullLoc_saved(f->getLocStart(), sm);
+        llvm::errs() << "Note: Visiting no body function:" << getUniqueFunctionNameAsString(f) << "\t"
+                     << "row:" << fullLoc_saved.getSpellingLineNumber() << "\n";
 #endif
-        }
-        visitedfunctions.insert( getUniqueFunctionNameAsString(f) );
+    }
+    visitedfunctions.insert( getUniqueFunctionNameAsString(f) );
 
 #ifdef MYDEBUG_CFG
-        llvm::outs() << "......... Visiting Function " << f->getQualifiedNameAsString() << " (" <<
-            getUniqueFunctionNameAsString(f) << ")" << " with Def?:" << f->isThisDeclarationADefinition() << "\n";
+    llvm::outs() << "......... Visiting Function " << f->getQualifiedNameAsString() << " (" <<
+        getUniqueFunctionNameAsString(f) << ")" << " with Def?:" << f->isThisDeclarationADefinition() << "\n";
 #endif
 
-        // I. ** Obtain CFG to whole function **
-        // If you want to get all AST stmt's into the CFG, not only a high-level view, use
-        //      clang::CFG::BuildOptions().setAllAlwaysAdd() .
-        auto bo = clang::CFG::BuildOptions().setAlwaysAdd(clang::Stmt::DeclRefExprClass, true);
+    // I. ** Obtain CFG to whole function **
+    // If you want to get all AST stmt's into the CFG, not only a high-level view, use
+    //      clang::CFG::BuildOptions().setAllAlwaysAdd() .
+    auto bo = clang::CFG::BuildOptions().setAlwaysAdd(clang::Stmt::DeclRefExprClass, true);
 //        std::unique_ptr<CFG> FooCFG = CFG::buildCFG(f, f->getBody(),
 //                                                    Context, bo); //clang::CFG::BuildOptions());
 
-        // Keep CFG alive by adding it to a vector so that AST nodes are still visible when we add other functions later
-        FooCFGs.push_back( CFG::buildCFG(f, f->getBody(), Context, bo) ); //clang::CFG::BuildOptions()););
-        if (!FooCFGs.back()){
-            // no need to show an error, if function is used later, then we have not created a vertex at this point,
-            // so Callee is unknown exception will be thrown.
-            // example: 3264486_5736519012712448_hmich.cpp (macro expanded, sz is the problem)
-            FooCFGs.pop_back();
-            return false;
+    // Keep CFG alive by adding it to a vector so that AST nodes are still visible when we add other functions later
+    FooCFGs.push_back(CFG::buildCFG(f, f->getBody(), Context, bo)); // clang::CFG::BuildOptions()););
+    if (!FooCFGs.back()) {
+        // no need to show an error, if function is used later, then we have not created a vertex at this point,
+        // so Callee is unknown exception will be thrown.
+        // example: 3264486_5736519012712448_hmich.cpp (macro expanded, sz is the problem)
+        FooCFGs.pop_back();
+        return false;
+    }
+
+    bool isfirstblock = true;
+    // II. ** A CFG consists of multiple CFG blocks, so iterate over them and add all stmt's as vertices. **
+    // Consider, at least on the implementing machine, the CFG had the reversed order of the code,
+    // means first CFGBlock was last block in code. Thus, we use the reverse_iterator to reverse the order again ;)
+    // Note: We cannot save the current CFGBlock in vertex, since after visiting the next function,
+    // this cfg block may not exist anymore. Thus, we have to save the statement pointers
+    // that of course will live until we finish our analysis.
+    for(CFG::reverse_iterator it = FooCFGs.back()->rbegin(); it != FooCFGs.back()->rend(); ++it){
+        CFGBlock *cbl = *it;
+
+#ifdef MYDEBUG_CFG
+        llvm::outs() << "Block ID: " << cbl->getBlockID() << "\n";
+#endif
+
+        // II.A Get all vertices for current block or create them if necessary;
+        // If we create the first new block, we also create extra vertices for function parameters
+        // although they are not part of clang's CFG.
+        std::vector<Graph::vertex_descriptor> vertexdescr = findOrCreateBlock(f, cbl, isfirstblock);
+        isfirstblock = false;
+
+        // II.B Now add edges from all predecessors to the starting node of the current block
+        for(auto cpred : cbl->preds()) {
+            // it can happen that preds is not defined, if block is not reachable, see below Reference (A1)
+            if(!cpred)
+                continue;
+#ifdef MYDEBUG_CFG
+            llvm::outs() << "\tPreds: " << cpred->getBlockID() << "\n";
+#endif
+
+            std::vector<Graph::vertex_descriptor> predvertex = findOrCreateBlock(f, cpred, false);
+            boost::add_edge(predvertex.back(), vertexdescr.front(), graph);
         }
 
-        bool isfirstblock = true;
-        // II. ** A CFG consists of multiple CFG blocks, so iterate over them and add all stmt's as vertices. **
-        // Consider, at least on the implementing machine, the CFG had the reversed order of the code,
-        // means first CFGBlock was last block in code. Thus, we use the reverse_iterator to reverse the order again ;)
-        // Note: We cannot save the current CFGBlock in vertex, since after visiting the next function,
-        // this cfg block may not exist anymore. Thus, we have to save the statement pointers
-        // that of course will live until we finish our analysis.
-        for(CFG::reverse_iterator it = FooCFGs.back()->rbegin(); it != FooCFGs.back()->rend(); ++it){
-            CFGBlock *cbl = *it;
+        // II.C Add Special Edges
+        for (auto cfgelem : vertexdescr) {
+            const Stmt *CS = graph[cfgelem].stmt;
 
-#ifdef MYDEBUG_CFG
-            llvm::outs() << "Block ID: " << cbl->getBlockID() << "\n";
-#endif
-
-            // II.A Get all vertices for current block or create them if necessary;
-            // If we create the first new block, we also create extra vertices for function parameters
-            // although they are not part of clang's CFG.
-            std::vector<Graph::vertex_descriptor> vertexdescr = findOrCreateBlock(f, cbl, isfirstblock);
-            isfirstblock = false;
-
-            // II.B Now add edges from all predecessors to the starting node of the current block
-            for(auto cpred : cbl->preds()) {
-                // it can happen that preds is not defined, if block is not reachable, see below Reference (A1)
-                if(!cpred)
-                    continue;
-#ifdef MYDEBUG_CFG
-                llvm::outs() << "\tPreds: " << cpred->getBlockID() << "\n";
-#endif
-
-                std::vector<Graph::vertex_descriptor> predvertex = findOrCreateBlock(f, cpred, false);
-                boost::add_edge(predvertex.back(), vertexdescr.front(), graph);
-            }
-
-            // II.C Add Special Edges
-            for (auto cfgelem : vertexdescr) {
-                const Stmt *CS = graph[cfgelem].stmt;
-
-                // a. Create edge to other functions
-                // To this end, check if this block has CallExpr = then we would have an
-                // interprocedural edge to a block from another function
-                if(CS && isa<CallExpr>(CS)){
-                    auto callexp = cast<CallExpr>(CS);
+            // a. Create edge to other functions
+            // To this end, check if this block has CallExpr = then we would have an
+            // interprocedural edge to a block from another function
+            // TODO How to handle CXXOperators?
+            if(CS && isa<CallExpr>(CS) && !isa<CXXOperatorCallExpr>(CS)){
+                auto callexp = cast<CallExpr>(CS);
+                if (callexp->getCalleeDecl()) {
                     if (auto fcallee = dyn_cast<FunctionDecl>(callexp->getCalleeDecl())) {
 
                         bool declinmainfile = Context->getSourceManager().isInMainFile(fcallee->getLocation());
@@ -135,6 +139,16 @@ bool ControlFlowGraphCore::addFunctionDecl(const FunctionDecl *f){
 #endif
                                         continue;
                                     }
+                                }
+
+                                // i.B) Check if called method is built_in, e.g. expect/assert
+                                if (fcallee->getBuiltinID() != 0) {
+#ifdef MYDEBUG_CFG
+                                    llvm::outs()
+                                        << "\t\t Warning: Skip"
+                                        << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                    continue;
                                 }
 
                                 // ii) Handle classes and structs:
@@ -175,13 +189,193 @@ bool ControlFlowGraphCore::addFunctionDecl(const FunctionDecl *f){
                         }
                     }
                 }
+            } else if (CS && isa<DeclRefExpr>(CS)) {
+                auto DER = cast<DeclRefExpr>(CS);
+                if (auto fcallee = dyn_cast<FunctionDecl>(DER->getDecl())) {
 
-                // b. To add new functionality by derived classes.
-                // Create special edges, such as declaration edges, ...
-                createSpecialEdges(CS, cfgelem, getUniqueFunctionNameAsString(f));
+                    bool declinmainfile =
+                        Context->getSourceManager().isInMainFile(fcallee->getLocation());
+                    if (declinmainfile) {
+                        // Callee is in the same file, continue
+
+                        // Possible that we work with a template; currently we only use the
+                        // generic template version
+                        auto fcallee_template = fcallee->getPrimaryTemplate();
+                        if (fcallee_template) {
+                            fcallee = fcallee_template->getTemplatedDecl();
+                        }
+
+                        // Get vertex
+                        // We assume that vertex should already exist, as functions should
+                        // be defined before. If not, we could try to add this function
+                        // declaration recursively. Currently, not done, as not needed, as
+                        // we either have a definition or decl. before usage.
+                        // TODO But for Class Methods???
+                        Graph::vertex_descriptor callexprvertex;
+                        if (!findStartingVertexForFunction(
+                                getUniqueFunctionNameAsString(fcallee), callexprvertex)) {
+
+                            // i) Check if called method is instantiated implicitly, e.g. by
+                            // defining a class.
+                            if (auto fcallee_cxxmethoddecl =
+                                    dyn_cast<CXXMethodDecl>(fcallee)) {
+                                if (fcallee_cxxmethoddecl->isCopyAssignmentOperator() ||
+                                    fcallee_cxxmethoddecl->isMoveAssignmentOperator()) {
+#ifdef MYDEBUG_CFG
+                                    llvm::outs()
+                                        << "\t\t Warning: Skip"
+                                        << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                    continue;
+                                }
+                            }
+
+                            // i.B) Check if called method is built_in, e.g. expect/assert
+                            if (fcallee->getBuiltinID() != 0) {
+#ifdef MYDEBUG_CFG
+                                llvm::outs() << "\t\t Warning: Skip"
+                                            << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                continue;
+                            }
+
+                            // ii) Handle classes and structs:
+                            // Class, structs: here, order does not matter, so that a function
+                            // can call s.th.
+                            //  that is defined later. Thus, we check if fct is inside a
+                            //  RecordDecl and if so, we just add the declaration and
+                            //  hopefully will visit the function later... Also, we accept if
+                            //  some C function is used before it's definition, even if this
+                            //  is not what the standard requires
+                            std::vector<const RecordDecl *> record_decl_list =
+                                goUpstairsInASTUntilMatch<RecordDecl, FunctionDecl>(fcallee, Context);
+                            if ((fcallee->isImplicit() && isCFile(*Context)) || !record_decl_list.empty() ||
+                                    (isa<CXXMethodDecl>(fcallee) && cast<CXXMethodDecl>(fcallee)->getParent()->isLambda())) {
+#ifdef MYDEBUG_CFG
+                                llvm::outs() << "\t\t Current decl is inside a Record Decl:"
+                                            << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                callexprvertex = createNewVertex(0, 0, nullptr, false, fcallee,
+                                    getUniqueFunctionNameAsString(fcallee), nullptr);
+
+                            } else {
+                                llvm::errs() << "Error: Callee is unknown: "
+                                            << getUniqueFunctionNameAsString(fcallee) << " in "
+                                            << getUniqueFunctionNameAsString(f) << "\n";
+                                return false;
+                            }
+                        }
+
+                        // Add edge from caller to function start
+                        std::pair<Graph::edge_descriptor, bool> e01 = boost::add_edge(cfgelem, callexprvertex, graph);
+                        graph[e01.first].interprocedural = true;
+                        graph[cfgelem].calleefunctionname = getUniqueFunctionNameAsString(fcallee);
+
+#ifdef MYDEBUG_CFG
+                        llvm::outs() << "\t\t"
+                                     << "Adding edge between (" << graph[cfgelem].blockid
+                                     << "," << graph[cfgelem].functionname << ") and ("
+                                     << graph[callexprvertex].blockid << ","
+                                     << graph[callexprvertex].functionname << ")\n";
+#endif
+                    }
+                }
+            } else if (CS && isa<CXXConstructExpr>(CS) &&
+                        !cast<CXXConstructExpr>(CS)->getConstructor()->isImplicit()) {
+                auto construct = cast<CXXConstructExpr>(CS);
+                if (auto fcallee =
+                        dyn_cast<FunctionDecl>(construct->getConstructor())) {
+
+                    bool declinmainfile =
+                        Context->getSourceManager().isInMainFile(fcallee->getLocation());
+                    if (declinmainfile) {
+                        // Callee is in the same file, continue
+
+                        // Possible that we work with a template; currently we only use the
+                        // generic template version
+                        auto fcallee_template = fcallee->getPrimaryTemplate();
+                        if (fcallee_template) {
+                            fcallee = fcallee_template->getTemplatedDecl();
+                        }
+
+                        // Get vertex
+                        // We assume that vertex should already exist, as functions should
+                        // be defined before. If not, we could try to add this function
+                        // declaration recursively. Currently, not done, as not needed, as
+                        // we either have a definition or decl. before usage.
+                        // TODO But for Class Methods???
+                        Graph::vertex_descriptor callexprvertex;
+                        if (!findStartingVertexForFunction(
+                                getUniqueFunctionNameAsString(fcallee), callexprvertex)) {
+
+                            // i) Check if called method is instantiated implicitly, e.g. by
+                            // defining a class.
+                            if (auto fcallee_cxxmethoddecl = dyn_cast<CXXMethodDecl>(fcallee)) {
+                                if (fcallee_cxxmethoddecl->isCopyAssignmentOperator() ||
+                                    fcallee_cxxmethoddecl->isMoveAssignmentOperator()) {
+#ifdef MYDEBUG_CFG
+                                    llvm::outs()
+                                        << "\t\t Warning: Skip"
+                                        << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                    continue;
+                                }
+                            }
+
+                            // i.B) Check if called method is built_in, e.g. expect/assert
+                            if (fcallee->getBuiltinID() != 0) {
+#ifdef MYDEBUG_CFG
+                                llvm::outs() << "\t\t Warning: Skip"
+                                            << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                continue;
+                            }
+
+                            // ii) Handle classes and structs:
+                            // Class, structs: here, order does not matter, so that a function
+                            // can call s.th.
+                            //  that is defined later. Thus, we check if fct is inside a
+                            //  RecordDecl and if so, we just add the declaration and
+                            //  hopefully will visit the function later...
+                            std::vector<const RecordDecl *> record_decl_list =
+                                goUpstairsInASTUntilMatch<RecordDecl, FunctionDecl>(fcallee, Context);
+                            if (!record_decl_list.empty()) {
+#ifdef MYDEBUG_CFG
+                                llvm::outs() << "\t\t Current decl is inside a Record Decl:"
+                                             << getUniqueFunctionNameAsString(fcallee) << "\n";
+#endif
+                                callexprvertex = createNewVertex(0, 0, nullptr, false, fcallee,
+                                    getUniqueFunctionNameAsString(fcallee), nullptr);
+
+                            } else {
+
+                                llvm::errs() << "Error: CXXContructExpr Callee is unknown:"
+                                             << getUniqueFunctionNameAsString(fcallee) << " in "
+                                             << getUniqueFunctionNameAsString(f) << "\n";
+                                return false;
+                            }
+                        }
+
+                        // Add edge from caller to function start
+                        std::pair<Graph::edge_descriptor, bool> e01 = boost::add_edge(cfgelem, callexprvertex, graph);
+                        graph[e01.first].interprocedural = true;
+                        graph[cfgelem].calleefunctionname = getUniqueFunctionNameAsString(fcallee);
+
+#ifdef MYDEBUG_CFG
+                        llvm::outs() << "\t\t"
+                                     << "Adding edge between (" << graph[cfgelem].blockid
+                                     << "," << graph[cfgelem].functionname << ") and ("
+                                     << graph[callexprvertex].blockid << ","
+                                     << graph[callexprvertex].functionname << ")\n";
+#endif
+                    }
+                }
             }
-        } // End of CFG Block reverse iteration.
-    }
+            // b. To add new functionality by derived classes.
+            // Create special edges, such as declaration edges, ...
+            createSpecialEdges(CS, cfgelem, getUniqueFunctionNameAsString(f));
+        }
+    } // End of CFG Block reverse iteration.
     return true;
 }
 

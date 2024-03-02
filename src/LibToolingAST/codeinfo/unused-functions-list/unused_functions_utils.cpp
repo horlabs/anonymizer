@@ -81,10 +81,14 @@ std::vector<std::pair<const FunctionDecl *, unsigned>> get_unused_functions(std:
     }
 
     for(const FunctionDecl* f : fctdecls) {
-//        llvm::errs() << getUniqueFunctionNameAsString(f) << "\n";
+        if (f->isFunctionTemplateSpecialization()) {
+            continue;
+        }
         bool isneeded = false;
 
         try {
+            // todo: either determine if operator< is used in this program or prevent deleting functions used
+            //  in operators, e. g. by adding a path from the start of main to all operators
             if (f->isMain())
                 continue;
             if (isa<CXXConstructorDecl>(f))
@@ -101,10 +105,12 @@ std::vector<std::pair<const FunctionDecl *, unsigned>> get_unused_functions(std:
 
             std::vector<const CallExpr *> callexprs =
                     ControlDataFlowGraphQueryHandler::queryAllCallExprsToFunction(cfggraph, f);
+            std::vector<const DeclRefExpr *> declrefexprs =
+                    ControlDataFlowGraphQueryHandler::queryAllDeclRefExprsToFunction(cfggraph, f);
             unsigned incoming_edges = 0;
 
-            // Simple Case
-            if(callexprs.empty()) {
+            // Simple Case -> todo: not that simple anymore since we consider functionpointers
+            if (callexprs.empty() && declrefexprs.empty()) {
                 isneeded = false;
             } else {
                 // determine the number of incoming edges.. exclude edges from the function itself

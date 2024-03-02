@@ -380,6 +380,19 @@ public:
         return true;
     }
 
+    /**
+     * Collect all declrefs and create a map from the decl to all refs
+     * @param e
+     * @return
+     */
+    bool VisitDeclRefExpr(DeclRefExpr *e) {
+        auto srcloc = e->getLocStart();
+        if (sm.isWrittenInMainFile(srcloc)) {
+            auto decl = e->getDecl();
+            this->declMap.insert({decl, e});
+        }
+        return true;
+    }
 
 protected:
     ASTContext &Context;
@@ -401,6 +414,10 @@ protected:
      * Vector to save all freopen occurences
     */
     std::vector<CallExpr*> freopen_outputexpressions;
+    /**
+     * map of all decls and declrefs
+     */
+    std::multimap<const ValueDecl *, DeclRefExpr *> declMap;
     /**
      * Vector to save all cout occurences
      */

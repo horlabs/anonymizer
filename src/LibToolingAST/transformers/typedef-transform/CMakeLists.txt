@@ -24,3 +24,21 @@ TARGET_LINK_LIBRARIES(
         typedef_sideinfo_transformer
         -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
         "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(gentypes_transformer
+        types_transformer.cpp
+        ../lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        gentypes_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")
+
+add_executable(using_typedef_transformer
+        using_typedef_transformer.cpp
+        ../lib/SourceTextHelper.cpp
+        )
+TARGET_LINK_LIBRARIES(
+        using_typedef_transformer
+        -Wl,--start-group "${PROJECT_LINK_LIBS}" -Wl,--end-group
+        "${MY_LLVM_LIBS} ${MY_SYSTEM_LIBS}")

@@ -92,7 +92,7 @@ public:
                         successfulRewrite = successfulRewrite || ret;
                     }
                 } else if(strategy == printftoasprintf){
-                    bool ret = replacevia_asprintf(e);
+                    bool ret = replacevia_asprintf(e, seed);
                     successfulRewrite = successfulRewrite || ret;
                 }
                 if(successfulRewrite && !all) {
@@ -265,13 +265,13 @@ public:
      *
      * @param e current call expression
      */
-    bool replacevia_asprintf(const CallExpr *e) {
+    bool replacevia_asprintf(const CallExpr *e, int seed) {
 
         // A. Definitions
         // Get the first printf argument = the format string with all the placeholders..
         std::string formatstring = getSourceText(Context, e->getArg(0), false);
 
-        std::string tempvarname = RenamingGuide::getRandomStringWith(4);
+        std::string tempvarname = RenamingGuide::getRandomStringWith(4, seed);
         std::string asprintfstr = "char* " + tempvarname + ";\n";
         asprintfstr += "asprintf(&" + tempvarname + ", " + formatstring;
         for (unsigned i = 1; i < e->getNumArgs(); i++) {
@@ -308,8 +308,65 @@ public:
         if(getSourceText(Context, e->getCallee())=="freopen"){
             auto srctext = getSourceText(Context, e);
             if (srctext.find("stdout") != std::string::npos){
-                // just small check with stdin
-                OurRewriter.RemoveText(getSourceRangeWithSemicolon(Context, e));
+                auto parent = Context.getParents(*e)[0];
+                auto bop = parent.get<BinaryOperator>();
+                if (bop && bop->isAssignmentOp()) {
+                    if (auto declref = dyn_cast<DeclRefExpr>(bop->getLHS())) {
+                        auto declrange = declref->getDecl()->getSourceRange();
+                        auto startloc = declref->getDecl()->getLocation();
+                        auto endloc = declref->getDecl()->getLocEnd();
+                        auto firstchar = getSourceText(
+                            Context, startloc.getLocWithOffset(-1), endloc)[0];
+                        while (firstchar == ' ' || firstchar == '*') {
+                            startloc = startloc.getLocWithOffset(-1);
+                            firstchar = getSourceText(Context, startloc.getLocWithOffset(-1),
+                                                        endloc)[0];
+                        }
+                        auto decltext = getSourceText(Context, startloc, endloc);
+                        endloc = startloc.getLocWithOffset(decltext.size() - 1);
+                        decltext =
+                            getSourceText(Context, startloc, endloc.getLocWithOffset(1));
+                        while (decltext[decltext.size() - 1] == ' ') {
+                            endloc = endloc.getLocWithOffset(1);
+                            decltext =
+                                getSourceText(Context, startloc, endloc.getLocWithOffset(1));
+                        }
+                        firstchar = getSourceText(Context, startloc.getLocWithOffset(-1),
+                                                endloc)[0];
+                        auto lastchar = decltext[decltext.size() - 1];
+                        if (lastchar == ',') {
+                            endloc = endloc.getLocWithOffset(1);
+                            declrange = SourceRange(startloc, endloc);
+                        } else if (firstchar == ',') {
+                            startloc = startloc.getLocWithOffset(-1);
+                            declrange = SourceRange(startloc, endloc);
+                        } else {
+                            declrange =
+                                getSourceRangeWithSemicolon(Context, declref->getDecl());
+                        }
+
+                        OurRewriter.RemoveText(declrange);
+                        auto range = this->declMap.equal_range(declref->getDecl());
+                        for (auto it = range.first; it != range.second; it++) {
+                            auto ref = it->second;
+                            auto p = Context.getParents(*ref)[0];
+                            if (p.get<ImplicitCastExpr>()) {
+                                p = Context.getParents(p)[0];
+                            }
+                            if (p.get<BinaryOperator>() &&
+                                p.get<BinaryOperator>()->isAssignmentOp()) {
+                                OurRewriter.RemoveText(getSourceRangeWithSemicolon(
+                                    Context, p.get<BinaryOperator>()));
+                            } else if (p.get<CallExpr>()) {
+                                OurRewriter.RemoveText(
+                                    getSourceRangeWithSemicolon(Context, p.get<CallExpr>()));
+                            }
+                        }
+                    }
+                } else {
+                    // just small check with stdin
+                    OurRewriter.RemoveText(getSourceRangeWithSemicolon(Context, e));
+                }
                 return true;
             }
         }

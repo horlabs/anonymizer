@@ -36,6 +36,10 @@ void DFSVisitor::DFSVisit(Graph::vertex_descriptor vx){
         // sc would be the CallExpr node that calls current function.
         // thus, we add all previous nodes so we prevent to go into current function again.
         auto callervxs_before = DFSVisitor::get_in_vertices(sc, cfggraph, true, false);
+        if (callervxs_before.empty()) { // ToDo: Circumvent this hacky trick (Problem is that
+                                        // FunctionTemplates CFGs are sometimes empty)
+            DFSVisit(sc);
+        }
         for(auto scc : callervxs_before){
             DFSVisit(scc);
         }
