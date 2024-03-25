@@ -80,7 +80,7 @@ class AddTemplateTransformer(BasicTransformer):
             assert sourceauthor.true_class != targetauthor.true_class # just small check
 
             if attack_mode == AttackMode.IMPERSONATION_WITH_EXAMPLE_FILES and targetauthor.auth_example_iids is None:
-                self.logger.error("No example file(s) for author {}. I will use default values.".format(sourceauthor.authiid))
+                self.logger.info("No example file(s) for author {}. I will use default values.".format(sourceauthor.authiid))
                 includes_target = self._get_default_target_values()
 
             elif attack_mode == AttackMode.IMPERSONATION_WITH_EXAMPLE_FILES and targetauthor.auth_example_iids is not None:

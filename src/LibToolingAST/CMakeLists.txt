@@ -86,6 +86,9 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${MY_CXX_FLAGS}")
 add_library(hooks SHARED hooks.cpp)
 TARGET_LINK_LIBRARIES(hooks dl)
 
+# Build libnocstd
+add_library(nocstd SHARED libnocstd.c)
+
 # All the tools we need to extract the authorship identification features
 add_subdirectory(feature_extraction)
 # All the tools we need to extract the authorship identification features, fork of feature_extraction.

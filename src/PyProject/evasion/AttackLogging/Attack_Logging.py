@@ -62,6 +62,8 @@ class Logger:
         self.logger.addHandler(self.handlerDebugDetails)
 
         self.setOfErrMsg: set = set()
+        self.setOfInfoMsg: set = set()
+        self.setOfWarnMsg: set = set()
 
 
     def close_logger(self):
@@ -89,6 +91,23 @@ class Logger:
             self.setOfErrMsg.add(msg)
             self.logger.error(msg)
 
+    def info(self, msg: str):
+        """
+        Passes the info msg to logging object if the info msg is new
+        :param msg:
+        """
+        if msg not in self.setOfInfoMsg:
+            self.setOfInfoMsg.add(msg)
+            self.logger.info(msg)
+
+    def warning(self, msg: str):
+        """
+        Passes the warning msg to logging object if the warning msg is new
+        :param msg:
+        """
+        if msg not in self.setOfWarnMsg:
+            self.setOfWarnMsg.add(msg)
+            self.logger.warning(msg)
 
     def debug_details(self, message, *args, **kws):
         """

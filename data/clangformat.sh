@@ -3,8 +3,8 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 
-SRC="<path-to-repo>/authorship-evasion/data/dataset_2017/dataset_2017_8/"
-OUTPUT_DIR="<path-to-repo>/authorship-evasion/data/dataset_2017/dataset_2017_8_formatted/"
+SRC="/code-imitator/data/dataset_2017/dataset_2017_8/"
+OUTPUT_DIR="/code-imitator/data/dataset_2017/dataset_2017_8_formatted/"
 
 MAX_TIME=3000
 MAX_JOBS=8

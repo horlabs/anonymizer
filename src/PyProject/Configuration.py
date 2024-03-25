@@ -88,7 +88,7 @@ flag_list_c = ['-w',
                '-std=c99',
                '-I{}'.format(os.path.join(llvmconfig_libdir, "clang/5.0.0/include/")),
                '-include', '{}'.format(os.path.join(repo_path, 'src/LibToolingAST/nocstd.h')),
-               '-L{}'.format(os.path.join(repo_path, 'src/LibToolingAST/')),
+               '-L{}'.format(os.path.join(repo_path, 'src/LibToolingAST/cmake-build-release')),
                '-lnocstd']
 
 flag_list_github = ["-c"] + flag_list_c.copy()

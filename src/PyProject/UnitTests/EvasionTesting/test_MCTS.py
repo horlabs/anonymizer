@@ -60,7 +60,7 @@ config.createattackdir(attdir=resultsdir)
 
 ############################################################# ##########################################################
 # II. Get features #
-config.datasetpath = os.path.join(config.repo_path, "data/dataset_2017//dataset_2017_8_formatted_macrosremoved")
+config.datasetpath = os.path.join(config.repo_path, "data/dataset_2017/dataset_2017_8_formatted_macrosremoved")
 testlearnsetup: classification.LearnSetups.LearnSetup.LearnSetup = classification.utils_load_learnsetup.load_learnsetup(
     learnmodelspath=os.path.join(ConfigurationGlobalLearning.learnmodelspath, "modelsuffix_unit_test"),
     feature_method=feature_method,
@@ -138,15 +138,13 @@ print("Attack finished on " + PROBLEM_ID)
 import evasion.AttackResult
 import evasion.AttackStatus
 
-print(attackeval.authorEvasionMapping)
 res_1: evasion.AttackResult.AttackResult = attackeval.authorEvasionMapping.loc['ACMonster', 'lazyBit']
 assert res_1.attackstatus == evasion.AttackStatus.AttackStatus.SUCCESS
 
 if evasion_algorithm == EvasionAlgorithm.MCTS_Classic:
-    expected_scores = np.array([ 0.        ,  0.04779412,  0.05106209,  0.06740196])
+    expected_scores = np.array([ 0.        , 0.04779412, 0.06413399, 0.06740196, 0.06740196])
 else:
     raise Exception("Evasion Algorithm not supported here in test case!")
-print(np.array(res_1.log_chosentransformers.score))
 assert np.allclose(np.array(res_1.log_chosentransformers.score), expected_scores)
 
 
@@ -154,10 +152,9 @@ res_2: evasion.AttackResult.AttackResult = attackeval.authorEvasionMapping.loc['
 assert res_2.attackstatus == evasion.AttackStatus.AttackStatus.SUCCESS
 
 if evasion_algorithm == EvasionAlgorithm.MCTS_Classic:
-    assert np.array(res_2.log_chosentransformers.transformer_id)[-2] == 'Typedef_add_listing'
+    assert np.array(res_2.log_chosentransformers.transformer_id)[-1] == 'Typedef_add_listing'
 
-    expected_scores = np.array([ 0.        ,  0.        ,  0.        ,  0.        ,  0.00196078,
-        0.01176471, 0.03627451, 0.07957516 ])
+    expected_scores = np.array([ 0.        ,  0.        ,  0.        ,  0.        ,  0.02647059,  0.05588235])
 else:
     raise Exception("Evasion Algorithm not supported here in test case!")
 

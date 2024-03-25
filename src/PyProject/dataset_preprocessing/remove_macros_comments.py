@@ -28,7 +28,8 @@ args = parser.parse_args()
 inputfile: str = args.file[0]
 outputfile: str = args.output[0]
 csvfile: str = args.csvfile[0]
-C_LANG = Language("<path to treesitter c.so>", "c") # TODO: Path
+Language.build_library("/tree-sitter-c/c.so", ["/tree-sitter-c"])
+C_LANG = Language("/tree-sitter-c/c.so", "c")
 parser = Parser()
 parser.set_language(C_LANG)
 

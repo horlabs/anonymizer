@@ -35,6 +35,8 @@ WORKDIR /iwyu/build
 RUN cmake -G "Unix Makefiles" -DIWYU_LLVM_ROOT_PATH=/clang+llvm-5.0.0-linux-x86_64-ubuntu16.04/ ..
 RUN make
 
+RUN git clone https://github.com/tree-sitter/tree-sitter-c /tree-sitter-c
+
 WORKDIR /code-imitator
 COPY data/ /code-imitator/data
 RUN mkdir /code-imitator/src

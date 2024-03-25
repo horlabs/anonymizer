@@ -24,13 +24,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("rich")
 
-C_LANG = Language("<path to tree sitter c.so>", "c") # TODO: Path
+Language.build_library("/tree-sitter-c/c.so", ["/tree-sitter-c"])
+C_LANG = Language("/tree-sitter-c/c.so", "c")
 parser = Parser()
 parser.set_language(C_LANG)
 
 exec_env = os.environ.copy()
-exec_env["LD_PRELOAD"] = "/code-imitator/src/LibToolingAST/hooks.so"
-exec_env["LD_LIBRARY_PATH"] = "/code-imitator/src/LibToolingAST"
+exec_env["LD_PRELOAD"] = "/code-imitator/src/LibToolingAST/cmake-build-release/libhooks.so"
+exec_env["LD_LIBRARY_PATH"] = "/code-imitator/src/LibToolingAST/cmake-build-release"
 
 class SubprocessThread(threading.Thread):
     def __init__(self,
@@ -66,7 +67,7 @@ cpp_input_dir = Path("/code-imitator/data/dataset_2017/test_inputs")
 src_dir = Path(sys.argv[1]).resolve()
 clang = Path("/clang+llvm-5.0.0-linux-x86_64-ubuntu16.04/bin/clang")
 argsC = ["-o", "a.out", "-w", "-ferror-limit=1", "-std=c99",
-        "-L/code-imitator/src/LibToolingAST",  "-lnocstd", "-lm",
+        "-L/code-imitator/src/LibToolingAST/cmake-build-release",  "-lnocstd", "-lm",
         "-include", "/code-imitator/src/LibToolingAST/microsoft_specific.h",
         "-include", "/code-imitator/src/LibToolingAST/nocstd.h",
         "-I", "/clang+llvm-5.0.0-linux-x86_64-ubuntu16.04/lib/clang/5.0.0/include"]

@@ -103,9 +103,9 @@ then
     main="mainf"
     main_0=""
 fi
-libs="-lm -ldl -lgmp -lglpk -lmpfr -lpthread $(pkg-config --cflags glib-2.0)"
+libs="-lm -ldl
 tigress -c -D_Float128=double $defines -w $libs -I"$include_dir" -I/code-imitator/src/LibToolingAST/ \
-    -L/code-imitator/src/LibToolingAST \
+    -L/code-imitator/src/LibToolingAST/cmake-build-release \
     -include nocstd.h -include microsoft_specific.h -lnocstd -lm \
     --Seed=$SEED --Statistics=0 --Verbosity=0 --Environment=x86_64:Linux:Clang:5.0 \
     --Transform=InitEncodeExternal \

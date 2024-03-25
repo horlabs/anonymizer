@@ -11,7 +11,9 @@ import Configuration
 import ConfigurationGlobalLearning as Config
 from tree_sitter import Language, Parser
 
-C_LANG = Language("<path to tree sitter c.so>", "c") # TODO: Path
+
+Language.build_library("/tree-sitter-c/c.so", ["/tree-sitter-c"])
+C_LANG = Language("/tree-sitter-c/c.so", "c")
 parser = Parser()
 parser.set_language(C_LANG)
 
@@ -20,7 +22,7 @@ class TestRunner:
 
     def __init__(self, log, name, transformer_path, transformer_name, execute, out_path, optional=None, preload=None, dataset_path=None):
         # todo: pass from execute_transformer/argparse
-        preload = os.path.join(Config.repo_path, "src/LibToolingAST/hooks.so")
+        preload = os.path.join(Config.repo_path, "src/LibToolingAST/cmake-build-release/libhooks.so")
         if optional is None:
             optional = []
         self.log = log
@@ -35,29 +37,36 @@ class TestRunner:
 
     def run_test(self, test_file):
         try:
-            cwd = None
-            subpath = None
-            i = 0
-            for p in Path(test_file).absolute().parts:
-                if p.startswith("dataset_"):
-                    subpath = ""
-                elif subpath is not None:
-                    i += 1
-                    subpath += "/" + p
-            subpath = str(Path(subpath).parent)
-            inner_path = "/".join(subpath.split("/")[4:])
-            subpath = "/".join(subpath.split("/")[1:4])
-            orig_path = "/code-imitator/data/dataset_github/dataset_github_filtered/" + subpath
-            macros_path = "/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/" + subpath
-            cwd = Path(test_file).parent
-            self.log.process()
-            dirname = os.path.join(self.out,
-                                subpath)
-            if not os.path.exists(dirname):
-                os.makedirs(dirname)
-            if not (Path(dirname) / inner_path).exists():
-                (Path(dirname) / inner_path).mkdir(parents=True, exist_ok=True)
-            filename = os.path.join(dirname, inner_path, os.path.basename(test_file))
+            if Configuration.multifilesetup:
+                cwd = None
+                subpath = None
+                i = 0
+                for p in Path(test_file).absolute().parts:
+                    if p.startswith("dataset_"):
+                        subpath = ""
+                    elif subpath is not None:
+                        i += 1
+                        subpath += "/" + p
+                subpath = str(Path(subpath).parent)
+                inner_path = "/".join(subpath.split("/")[4:])
+                subpath = "/".join(subpath.split("/")[1:4])
+                orig_path = "/code-imitator/data/dataset_github/dataset_github_filtered/" + subpath
+                macros_path = "/code-imitator/data/dataset_github/dataset_github_filtered_macrosremoved/" + subpath
+                cwd = Path(test_file).parent
+                self.log.process()
+                dirname = os.path.join(self.out,
+                                    subpath)
+                if not os.path.exists(dirname):
+                    os.makedirs(dirname)
+                if not (Path(dirname) / inner_path).exists():
+                    (Path(dirname) / inner_path).mkdir(parents=True, exist_ok=True)
+                filename = os.path.join(dirname, inner_path, os.path.basename(test_file))
+            else:
+                dirname = os.path.join(self.out,
+                               os.path.dirname(test_file).split(os.path.sep)[-1])
+                if not os.path.exists(dirname):
+                    os.makedirs(dirname, exist_ok=True) #  Racecondition possible, but harmless
+                filename = os.path.join(dirname, os.path.basename(test_file))
 
             compile_args = []
             if filename.endswith(".cpp"):
@@ -65,17 +74,14 @@ class TestRunner:
                                 "-include", os.path.join(Config.repo_path, "src/LibToolingAST/microsoft_specific.h"),
                                 "-std=c++11"]
             else:
-                compile_args += ["-std=c99", "-lm", "-ldl", "-lgmp", "-lglpk", "-lmpfr", "-lpthread", 
+                compile_args += ["-std=c99", "-lm", "-ldl", "-lpthread", 
                                 "-Wno-error=unused-command-line-argument", "-Wno-error=logical-op-parentheses",
                                 '-include', '{}'.format(os.path.join(Config.repo_path, 'src/LibToolingAST/nocstd.h')),
                                 #"-include", "/usr/include/stdlib.h",
                                 "-I/usr/local/include/glib-2.0", "-I/usr/local/lib/x86_64-linux-gnu/glib-2.0/include", "-I/usr/local/include",
-                                #'-L{}'.format(os.path.join(Config.repo_path, 'src/LibToolingAST/')),
+                                '-L{}'.format(os.path.join(Config.repo_path, 'src/LibToolingAST/cmake-build-release')),
                                 '-lnocstd', "-DGITHUB"
                                 ]
-                """-o", "a.out", "-w", "-ferror-limit=1", "-std=c99",
-            "-L/code-imitator/src/LibToolingAST",  "-lnocstd", "-lm",
-            "-I/usr/local/include/glib-2.0", "-I/usr/local/lib/x86_64-linux-gnu/glib-2.0/include", "-I/usr/local/include","""
             # print(" ".join(transform_args))
             with open(test_file, "rb") as fd:
                 code = fd.read()
@@ -96,6 +102,7 @@ class TestRunner:
                 compile_args.extend(["-D", "MIN_MAX"])
 
             with tempfile.TemporaryDirectory() as tmp_path:
+                tmp_file = Path(filename)
                 if Configuration.multifilesetup:
                     tmp_dir = Path(tmp_path) / subpath
                     shutil.copytree(orig_path, tmp_dir)
@@ -170,7 +177,7 @@ class TestRunner:
 
                 clang_process = subprocess.run(
                     [os.path.join(Configuration.llvmconfig_prefix, "bin", "clang++" if filename.endswith(".cpp") else "clang"),
-                    "-o", f"out_{problem_name}.a", "-w", "-c",
+                    "-o", f"out_{problem_name}.a", "-w", "-c" if Configuration.multifilesetup else "",
                     "-ferror-limit=1", tmp_file if Configuration.multifilesetup else filename,
                     *compile_args],
                     stderr=PIPE, stdout=PIPE, cwd=tmp_file.parent if Configuration.multifilesetup else None)
@@ -183,8 +190,9 @@ class TestRunner:
                     self.log.add_error(test_file)
                     return (test_file, False)
                 
+                code = tmp_file.read_bytes()
                 with open(filename, "wb") as f:
-                    f.write(tmp_file.read_bytes())
+                    f.write(code)
 
                 if self.execute:
                     preload_env = None

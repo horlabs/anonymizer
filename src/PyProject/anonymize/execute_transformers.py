@@ -31,19 +31,18 @@ transformers = [("itervar", "naming-transformers", []),
                 ("bufname", "naming-transformers", []),
                 ("numbering", "naming-transformers", []),
                 ("gentypes", "typedef-transform", []),
-                ("using_typedef", "typedef-transform", []),
-                ("switch", "if-transformers", []),
                 ("comma", "", []),
+                ("using_typedef", "typedef-transform", []),
+                ("braces", "", []),
+                ("multidecl", "", []),
+                ("voidreturn", "return-transform", []),
+                ("paren", "", []),
+                ("ifelse", "if-transformers", []),
+                ("switch", "if-transformers", []),
                 ("compoundassign", "", []),
                 ("main", "", []),
-                ("multidecl", "", []),
-                ("braces", "", []),
-                ("ifelse", "if-transformers", []),
                 ("unnecessaryreturn", "return-transform", []),
-                ("voidreturn", "return-transform", []),
-                ("flattenif", "if-transformers", []),
-                ("paren", "", []),
-                ("unused_typedefs", "unused-stuff", [])]
+                ("flattenif", "if-transformers", [])]
 
 
 def do_test(transformer_ids, execute=False):
@@ -197,28 +196,6 @@ if __name__ == "__main__":
             transformer_ids.append(mapping[ts])
     else:
         raise RuntimeError("Unknown subparser")
-
-    """
-    [("itervar", "naming-transformers", []),         0
-     ("bufname", "naming-transformers", []),         1
-     ("numbering", "naming-transformers", []),       2
-     ("gentypes", "typedef-transform", []),          3
-     ("using_typedef", "typedef-transform", []),     4
-     ("switch", "if-transformers", []),              5
-     ("comma", "", []),                              6
-     ("compoundassign", "", []),                     7
-     ("ifelse", "if-transformers", []),              8
-     ("main", "", []),                               9
-     ("multidecl", "", []),                         10
-     ("braces", "", []),                            11
-     ("unnecessaryreturn", "return-transform", []), 12
-     ("voidreturn", "return-transform", []),        13
-     ("flattenif", "if-transformers", []),          14
-     ("paren", "", []),                             15
-     ("unused_typedefs", "unused-stuff", [])]       16
-     """
-
-    # transformer_ids = [0,1,3,4,   8,14,   15]
 
     execute = (args.test_output and args.execute)
     try:
