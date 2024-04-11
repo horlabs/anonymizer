@@ -1,9 +1,14 @@
 # On Challenges in Anonymizing Source Code
 
-This is the repository for the submission "I still know it's you! On
-Challenges in Anonymizing Source Code". This document contains
-instructions on how to generate the datasets and results present in
-the submission.
+This is the repository to the paper:
+
+---
+
+Micha Horlboge, Erwin Quiring, Roland Meyer, and Konrad Rieck. I still know it's you! On Challenges in Anonymizing Source Code. *Proc. on Privacy Enhancing Technologies 2024(3)*, 2024.
+
+---
+
+This document contains instructions on how to generate the datasets and results present in the submission.
 
 ## Requirements
 
@@ -94,3 +99,17 @@ will do all classifications for datasets and models specified in
 
 - Sometimes, DNS resolution is not working while building the image. Try to add
   `--network host` to your command, this should resolve this problem in most cases.
+
+
+If you are using our code, please cite our PETS paper.
+You may use the following BibTex entry:
+```
+@article{horquimeyrie2024,
+  author  = {Micha Horlboge and Erwin Quiring and Roland Meyer and Konrad Rieck},
+  journal = {Proc. of the Privacy Enhancing Technologies Symposium ({PETS})},
+  title   = {I still know it's you! On Challenges in Anonymizing Source Code},
+  year    = 2024,
+  number  = 3,
+  volume  = 2024
+}
+```
